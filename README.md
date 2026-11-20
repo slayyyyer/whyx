@@ -1,8 +1,8 @@
 # whyx
 
-An X/Twitter clone built from [Why](https://github.com/slayyyyer/why-lang) pages, on a vendored copy
-of the runtime. Feed, threads, profiles, replies, likes, reposts, search, sign-up and sign-in — with
-no router, no page build step and no framework: one `.why` file per URL.
+An X/Twitter clone built from [Why](https://github.com/slayyyyer/why-lang) pages. Feed, threads,
+profiles, replies, likes, reposts, search, sign-up and sign-in — with no router, no page build step
+and no framework: one `.why` file per URL.
 
 Demo accounts are `alice`, `bob`, `carol`, `dave`, `erin` and `frank`, all with the password
 `whylang`.
@@ -12,36 +12,48 @@ Demo accounts are `alice`, `bob`, `carol`, `dave`, `erin` and `frank`, all with 
 - `app/` — the site: one `.why` file per URL, `style.css`, and `migrations/` holding the schema and
   the demo seed. A database is created from the migrations on first boot, so deleting `data.db` gets
   the demo data back.
-- `why-lang/` — the vendored runtime. Its changes are server-side sessions with sign-in rotation,
-  PBKDF2 password hashing and string indexing; the rest is upstream.
-- `Dockerfile` — two stages: the Gradle wrapper builds the shaded CLI jar, then a JRE image runs
-  the site.
+- `src/main/java/whyx/Main.java` — the launcher. The Why plugin packages `app/` into the jar under
+  `META-INF/why-site`, so the launcher serves it through `Site.fromClasspath()` instead of a folder.
+- `src/test/java/whyx/WhyxAppTest.java` — the app's tests, driving the real pages through
+  `why.testing.TestServer`.
+- `build.gradle.kts` — applies the published `io.github.slayyyyer.why` plugin (version `0.2.0`) and
+  the Shadow plugin, which produce one self-contained `build/libs/whyx.jar`.
+- `Dockerfile` — two stages: the Gradle wrapper builds that jar, then a JRE image runs it.
 - `.github/workflows/image.yml` — builds and pushes `ghcr.io/slayyyyer/whyx:latest` on every push to
   `main`.
+
+The language itself is a dependency, not a copy: the plugin resolves
+`io.github.slayyyyer:why-lang:0.2.0` from Maven Central. Upgrading is one version bump in
+`build.gradle.kts`.
 
 ## Run it locally
 
 Needs JDK 21; the Gradle wrapper fetches the build tool.
 
 ```bash
-(cd why-lang && ./gradlew shadowJar)
-java -jar why-lang/build/libs/why.jar app --port 3000 --dev
+./gradlew whyRun --args="--db data.db --dev"
+```
+
+Or build the jar and run it:
+
+```bash
+./gradlew shadowJar
+java -jar build/libs/whyx.jar --port 3000 --dev --db data.db
 ```
 
 Then open http://localhost:3000. `--dev` shows source and SQL in 500 pages; drop it to see the plain
-error page.
+error page. `--db` keeps the database across runs — without it the site uses a temporary file.
 
 ## Checks
 
 ```bash
-(cd why-lang && ./gradlew test)
-java -jar why-lang/build/libs/why.jar check app
+./gradlew whyCheck   # compiles every page, prints the page map (also runs as part of build)
+./gradlew test       # WhyxAppTest, plus the runtime's own coverage of the pages
+./gradlew build      # both, then jars the site
 ```
 
-`test` runs the runtime's suite, including `WhyxAppTest`, which drives the real pages through
-`why.testing.TestServer` (sign-in rotation, unauthenticated posts, deleting someone else's post, the
-home feed's follow graph). `check` compiles every page and prints the page map without serving
-anything.
+`WhyxAppTest` drives the real pages through `why.testing.TestServer`: sign-in rotation, unauthenticated
+posts, deleting someone else's post, the home feed's follow graph, the sign-in and sign-up limits.
 
 ## Run the image
 

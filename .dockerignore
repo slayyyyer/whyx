@@ -1,6 +1,7 @@
-# The build context is the whole workspace; the image needs only why-lang sources and app pages.
+# The build context is the whole workspace; the image needs only the build files and app pages.
 .tools/
 .freebuff/
 **/.git/
-why-lang/target/
+build/
+.gradle/
 app/data.db*

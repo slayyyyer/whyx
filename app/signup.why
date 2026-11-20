@@ -39,7 +39,9 @@ if request.method == "POST"
         db.exec("insert into users (handle, name, bio, location, color, password_hash) values (?, ?, ?, ?, ?, ?)", handle, name.strip, "", "", color, stored)
         login_failed(db, "signup", ip)
         created = db.get("select id from users where handle = ?", handle)
-        session.login(created.id)
+        session.clear()
+        session.set("user_id", str(created.id))
+        session.rotate()
         flash.set("notice", "Welcome to whyx, " + name.strip + ".")
         redirect("/")
       end
