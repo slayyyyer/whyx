@@ -61,6 +61,13 @@ class SessionTest {
                 view:
                 stored={{session.get("user_id")}}
                 """);
+        write("login.why", """
+                controller:
+                session.login(params.id)
+
+                view:
+                user={{session.get("user_id")}}
+                """);
         server = TestServer.start(dir);
     }
 
@@ -154,6 +161,29 @@ class SessionTest {
     void rotatingWithoutAPriorCookieStillStoresValues() throws Exception {
         TestServer.Response rotated = server.get("/rotate");
         assertTrue(get("/who", sessionId(rotated)).body().contains("user=7"));
+    }
+
+    @Test
+    void loginClearsPreLoginValuesAndRotatesTheId() throws Exception {
+        String oldId = sessionId(server.get("/remember?id=1"));
+
+        TestServer.Response loggedIn = get("/login?id=2", oldId);
+        assertEquals(200, loggedIn.status());
+        String newId = sessionId(loggedIn);
+
+        assertNotEquals(oldId, newId, "login did not rotate the session id");
+        assertTrue(get("/who", oldId).body().contains("user= name="),
+                "the pre-login cookie still loaded a user");
+        assertTrue(get("/who", newId).body().contains("user=2 name="),
+                "a pre-login session value survived sign-in");
+    }
+
+    @Test
+    void loginNeedsAUser() {
+        Session session = new Session();
+        assertThrows(WhyError.class, () -> session.login(null));
+        assertThrows(WhyError.class, () -> session.login(""));
+        assertFalse(session.changed(), "a rejected login should not dirty the session");
     }
 
     @Test

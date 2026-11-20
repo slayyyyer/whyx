@@ -29,7 +29,7 @@ pluginManagement {
 ```kotlin
 // build.gradle.kts
 plugins {
-    id("io.github.slayyyyer.why") version "0.1.0"
+    id("io.github.slayyyyer.why") version "0.2.0"
 }
 
 repositories {
@@ -77,7 +77,7 @@ src/why/index.why
 src/why/style.css
 ```
 
-The plugin applies `java-library`, adds the Why runtime (`io.github.slayyyyer:why-lang:0.1.0`) as an `api`
+The plugin applies `java-library`, adds the Why runtime (`io.github.slayyyyer:why-lang:0.2.0`) as an `api`
 dependency, copies `src/why` into the jar at `META-INF/why-site`, and writes a sorted
 `META-INF/why-site.index`. It adds:
 
@@ -137,8 +137,12 @@ java -jar build/libs/why.jar ./site
 ```
 
 `java -jar build/libs/why.jar check ./site` parses and checks the site without serving it. The CLI
-accepts `--port`, `--host`, `--db`, `--dev` and `--secure-cookies`; the plugin exposes the same
-settings through the `why` extension.
+accepts `--port`, `--host`, `--db`, `--dev`, `--secure-cookies` and `--trust-proxy`; the plugin
+exposes the same settings through the `why` extension. `PORT`, `HOST`, `WHY_DB` and
+`WHY_SECURE_COOKIES` supply the defaults for the first four, so a container needs no shell wrapper.
+`--trust-proxy` marks cookies `Secure` when a loopback proxy forwards `X-Forwarded-Proto: https`,
+and derives `request.remote` from the last `X-Forwarded-For` hop that is not loopback; both headers
+are ignored from any other peer.
 
 To try a local build of the plugin against a consumer project, run
 `./gradlew publishToMavenLocal :why-gradle-plugin:publishToMavenLocal` and put `mavenLocal()` ahead
@@ -194,7 +198,9 @@ untrusted code on the server.
 
 For an exposed deployment:
 
-- terminate TLS in a reverse proxy and use `--secure-cookies`; do not expose the plain HTTP listener
+- terminate TLS in a reverse proxy and use `--secure-cookies` (or `--trust-proxy` when the proxy is
+  loopback and forwards `X-Forwarded-Proto: https` and `X-Forwarded-For`); do not expose the plain
+  HTTP listener
 - run Why as a dedicated, non-root service account with least-privilege filesystem permissions
 - keep the SQLite database outside the web root, using an explicit `--db` path
 - keep regular, protected backups outside the web root and test restoring them
@@ -222,8 +228,9 @@ See [SECURITY.md](SECURITY.md) for the full security policy and deployment check
 - Hard per-request limits: 64 KiB bodies, 16 KiB/100 headers, 32 concurrent requests, a 10-second
   timeout, 100k interpreter steps, 1M rendered characters, 10k/4 MiB database results, 4 MiB static
   assets, 4 KiB flash values and 256 KiB pages/imports.
-- `java -jar why.jar [site] [--host HOST] [--port N] [--db FILE] [--dev] [--secure-cookies]`;
-  `java -jar why.jar check [site]` parses and checks the whole site without serving it.
+- `java -jar why.jar [site] [--host HOST] [--port N] [--db FILE] [--dev] [--secure-cookies]
+  [--trust-proxy]`; `java -jar why.jar check [site]` parses and checks the whole site without
+  serving it.
 
 ## M1 — the language and views
 
@@ -337,7 +344,8 @@ end
 ```
 
 Only `nil` and `false` are falsy (Ruby rules: `0` and `""` are truthy). Undefined names read as
-`nil`. `+` with a string on either side concatenates.
+`nil`. `+` with a string on either side concatenates. Strings are indexed by character:
+`"why"[0]` is `"w"`, `"why"[-1]` is `"y"`, and an index past either end is `nil`.
 
 Built-in methods:
 
@@ -347,7 +355,10 @@ Built-in methods:
   `each`/`map`/`select` with a block
 - Hashes: `keys`, `values`, `length`/`size`, `has_key?`, `each` with a block
 - Numbers: `to_i`, `to_f`, `abs`, `round`
-- Functions: `str(x)`, `int(x)`, `float(x)`, `redirect(path)`, `validate(form, rules)`
+- Functions: `str(x)`, `int(x)`, `float(x)`, `redirect(path)`, `redirect_back(fallback)`,
+  `status(code)`, `halt(code)`, `validate(form, rules)`, `pbkdf2(password, salt, iterations)`,
+  `password_hash(password, iterations)`, `password_matches(password, stored)`,
+  `password_needs_rehash(stored, iterations)`
 
 ## Views
 
@@ -380,6 +391,14 @@ is `0` and still truthy; use `posts.length > 0` for an empty state.
 SQLite, at `<site>/data.db` by default (`--db` overrides it); point `--db` outside the site folder
 for an exposed deployment. One connection per request.
 
+Connections enable `PRAGMA foreign_keys`, so a declared `references` clause is enforced and
+`on delete cascade` works. The migration runner turns enforcement off while a migration rebuilds a
+table and runs `foreign_key_check` before recording it.
+
+A migration file is recorded with a SHA-256 checksum when it runs; editing it afterwards raises
+instead of being ignored, so add a new file. Statements split at top-level semicolons, so a
+string or a `CREATE TRIGGER ... BEGIN ... END` body keeps its own.
+
 ```ruby
 posts = db.query("select * from posts order by id desc")   # list of hashes
 post  = db.get("select * from posts where id = ?", id)     # first row or nil
@@ -389,6 +408,24 @@ n     = db.exec("insert into posts (title) values (?)", title)
 Rows are hashes keyed by column label, so `{{it.title}}` and `post.title` work. Arguments are
 bound as prepared-statement parameters.
 
+A parameter can be named, which is useful when one value appears more than once:
+
+```ruby
+db.query("select * from posts where user_id = :who or id in (select post_id from likes where user_id = :who)",
+         who: uid)
+db.query("select * from posts where id = ? and user_id = :who", id, who: uid)  # mixed with ?
+```
+
+Names are checked against the SQL: a missing value and an unused name both raise. Numbered
+placeholders such as `?1` are rejected; use `?` or a name. Use `#{}` only to build SQL structure,
+never to insert values. An identifier cannot be a parameter, so a page
+that must choose a table or column passes it through an explicit allowlist:
+
+```ruby
+table = sql.ident(params.table, ["likes", "reposts"])
+db.exec("delete from " + table + " where user_id = ?", uid)
+```
+
 If the database file does not exist, `<site>/schema.sql` is applied once so a site folder is
 self-contained. A `migrations/` folder takes over the schema: every `.sql` file in it applies once,
 in filename order, each in its own transaction, recorded in a `schema_migrations` table. A fresh
@@ -396,13 +433,19 @@ database runs them in order; an existing one applies only what is pending. The f
 added to a database created by `schema.sql` should therefore be written against that schema with
 `create table if not exists`, or the baseline row inserted into `schema_migrations`.
 
+`seed.sql` is demo data, not schema. With `--dev` it runs once after the migrations, and only when
+the database file did not exist before that boot. A deployed site with a persistent disk never
+re-inserts rows; an ephemeral host that starts empty still gets its demo users. Write the seed with
+`insert or ignore` so applying it by hand is safe too.
+
 ## Request globals
 
 - `params` — query parameters as strings, e.g. `/post?id=3` gives `params.id == "3"`.
 - `form` — POSTed form fields as strings, empty on GET. Only `application/x-www-form-urlencoded`
   bodies are read (64 KiB cap).
 - `request` — a hash with `method`, `path`, `query`, `params`, `form` and `remote` (the caller's IP
-  address, for throttling or auditing).
+  address, for throttling or auditing; behind `--trust-proxy`, a loopback proxy's last
+  `X-Forwarded-For` hop replaces the socket peer).
 - `flash` — one-shot messages. `flash.set("notice", "…")` stores a value for the next page
   request, where `{{flash.notice}}` can read it; the request after that no longer has it. Messages
   live in a bounded, expiring in-memory store keyed by a server-issued `why_session` cookie;
@@ -410,17 +453,75 @@ added to a database created by `schema.sql` should therefore be written against 
 - `csrf` — `csrf.token`, a per-browser secret for form posts. It rides an HttpOnly `why_csrf`
   cookie, so it survives a restart and needs no server-side state. A POST without the matching
   `_token` field is rejected with 403.
+- `session` — long-lived values for this browser; see [Sessions](#sessions).
+
+## Sessions
+
+`session` keeps small values for one browser across requests and server restarts. They live in the
+site database (`why_sessions`) and are named by the HttpOnly `why_sid` cookie.
+
+```ruby
+session.login(user.id)            # clear values, set user_id, rotate the session ID
+me = session.get("user_id")
+session.set("notice", nil)        # nil removes the name
+session.clear()                   # sign out
+session.rotate()                  # rotate manually when a page manages its own sign-in
+```
+
+The cookie lasts 30 idle days; every page that loads a live session slides that window. Expired
+rows are pruned when a session is written. Use `session.login(user.id)` after verifying
+credentials: it clears values from before sign-in, stores `user_id`, and rotates the session ID,
+so a pre-login cookie cannot be replayed. Set any welcome flash after `session.login`.
+`session.rotate()` remains available when a page manages its own sign-in state. A session holds at
+most 32 names, 64-character names and 4096-character values.
+
+## Passwords
+
+`pbkdf2(password, salt, iterations)` derives a 32-byte PBKDF2-HMAC-SHA256 key and returns it as
+lowercase hex. The API accepts 10,000 to 1,000,000 iterations; use at least 600,000 for new
+PBKDF2-HMAC-SHA256 hashes. Store the parameters with the key so the cost can be raised later
+without invalidating rows:
+
+```
+pbkdf2-sha256$600000$<salt>$<key>
+```
+
+`password_matches(password, stored)` parses that row and compares the keys in constant time; a
+malformed row is a failed match. `password_hash(password, iterations)` generates a fresh 16-byte
+salt and returns the row to store. `password_needs_rehash(stored, iterations)` is true when the
+row is malformed or costs less than `iterations`, so a sign-in can upgrade it while the password
+is in hand:
+
+```
+if user != nil and password_matches(password, user.password_hash)
+  if password_needs_rehash(user.password_hash, rounds())
+    db.exec("update users set password_hash = ? where id = ?",
+            password_hash(password, rounds()), user.id)
+  end
+end
+```
+
+Never store the password itself.
 
 ## Responses
 
-`redirect("/path")` answers `303 See Other`. A page controls the rest through `response`:
+`redirect("/path")` answers `303 See Other`; it accepts only a single-slash local path, never an
+absolute URL, `//host` or a backslash variant. `redirect_back("/")` uses the posted `back` field
+when it is such a path and the fallback otherwise.
+
+A page controls the rest through `response`, or the `status`/`halt` builtins:
 
 ```ruby
 response.status(201)                      # 200-599; defaults to 200
+status(201)                               # the same, as a builtin
+halt(404)                                 # set the status and stop before the view renders
 response.header("X-Why", "created")
 response.json({ok: true, count: 2})       # answers JSON and ignores the rendered view
 response.csp("default-src 'self'")        # opt into a policy
 ```
+
+`status(code)` sets the status and keeps rendering, which is what a page that wants a 404 body
+uses; `halt(code)` sets it and stops the controller or view immediately.
 
 `response.header` refuses the headers the server owns (`Content-Length`, `Set-Cookie` and friends)
 and any value that is not one line of printable ASCII. The default `frame-ancestors 'none'` is

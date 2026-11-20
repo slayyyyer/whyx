@@ -66,7 +66,7 @@
 }</code></pre></div>
         <p>Then apply the plugin and declare the repository it resolves the runtime from:</p>
         <div class="code"><div class="code-title">build.gradle.kts</div><pre><code>plugins {
-    id("io.github.slayyyyer.why") version "0.1.0"
+    id("io.github.slayyyyer.why") version "0.2.0"
 }
 
 repositories {
@@ -168,9 +168,9 @@ java -jar build/libs/why.jar ./site</code></pre></div>
         </div>
 
         <h2 id="troubleshooting">Troubleshooting</h2>
-        <h3>“Plugin [id: 'io.github.slayyyyer.why', version: '0.1.0'] was not found”</h3>
+        <h3>“Plugin [id: 'io.github.slayyyyer.why', version: '0.2.0'] was not found”</h3>
         <p>The marker lives on Maven Central, not the Plugin Portal. Add <code>mavenCentral()</code> to <code>pluginManagement.repositories</code> in <code>settings.gradle.kts</code>.</p>
-        <h3>“Could not find io.github.slayyyyer:why-lang:0.1.0”</h3>
+        <h3>“Could not find io.github.slayyyyer:why-lang:0.2.0”</h3>
         <p>The plugin adds the runtime as a dependency. Add <code>mavenCentral()</code> to the project's <code>repositories</code> block.</p>
         <h3><code>whyRun</code> does nothing</h3>
         <p>Both tasks skip when the site directory is missing. Create <code>src/why</code>, or point <code>why { siteDir.set(...) }</code> at your folder.</p>

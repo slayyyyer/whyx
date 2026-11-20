@@ -14,19 +14,22 @@ back = "/post?id=" + str(id)
 title = "Post / whyx"
 parent_list = []
 replies = []
-post = db.get(posts_from(uid) + " where p.id = ?", id)
+post = db.get(posts_from() + " where p.id = ?", id, who: uid)
 if post
   title = post.name + " (@" + post.handle + ") / whyx"
   if post.parent_id
-    parent = db.get(posts_from(uid) + " where p.id = ?", post.parent_id)
+    parent = db.get(posts_from() + " where p.id = ?", post.parent_id, who: uid)
     if parent
       parent_list.push(parent)
     end
   end
-  replies = db.query(posts_from(uid) + " where p.parent_id = ? order by p.id asc limit 100", id)
+  replies = db.query(posts_from() + " where p.parent_id = ? order by p.id asc limit 100", id, who: uid)
 end
 # _acts and _delete render the post bound to 'it', so the thread's own post is bound here.
 it = post
+if post == nil
+  status(404)
+end
 
 view:
 {{> _head}}

@@ -23,12 +23,15 @@ if user
   is_me = me != nil and me.id == user.id
   follows_them = db.get("select 1 as ok from follows where follower_id = ? and followee_id = ?", uid, user.id)
   if tab == "replies"
-    list = db.query(posts_from(uid) + " where p.user_id = ? and p.parent_id is not null order by p.id desc limit 40", user.id)
+    list = db.query(posts_from() + " where p.user_id = ? and p.parent_id is not null order by p.id desc limit 40", user.id, who: uid)
   elsif tab == "likes"
-    list = db.query(posts_from(uid) + " join likes w on w.post_id = p.id where w.user_id = ? order by w.created_at desc, p.id desc limit 40", user.id)
+    list = db.query(posts_from() + " join likes w on w.post_id = p.id where w.user_id = ? order by w.created_at desc, p.id desc limit 40", user.id, who: uid)
   else
-    list = db.query(posts_from(uid) + " where p.user_id = ? and p.parent_id is null order by p.id desc limit 40", user.id)
+    list = db.query(posts_from() + " where p.user_id = ? and p.parent_id is null order by p.id desc limit 40", user.id, who: uid)
   end
+end
+if user == nil
+  status(404)
 end
 
 view:

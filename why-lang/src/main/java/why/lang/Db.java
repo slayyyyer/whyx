@@ -10,9 +10,11 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.sqlite.ProgressHandler;
 
@@ -44,8 +46,17 @@ public final class Db implements AutoCloseable {
 
     /** Rows as hashes keyed by column label. */
     public List<Object> query(String sql, List<Object> args) {
-        try (PreparedStatement ps = connection().prepareStatement(sql)) {
-            bind(ps, args);
+        return query(sql, args, Map.of());
+    }
+
+    /**
+     * Rows as hashes, with {@code ?} bound from {@code args} in order and {@code :name} bound from
+     * {@code named}. A name may appear more than once; each occurrence reuses the one value.
+     */
+    public List<Object> query(String sql, List<Object> args, Map<String, Object> named) {
+        Bound bound = Bound.of(sql, args, named);
+        try (PreparedStatement ps = connection().prepareStatement(bound.sql())) {
+            bind(ps, bound.args());
             try (ResultSet rs = ps.executeQuery()) {
                 return rows(rs);
             }
@@ -56,8 +67,14 @@ public final class Db implements AutoCloseable {
 
     /** Runs a statement and returns the number of affected rows. */
     public long exec(String sql, List<Object> args) {
-        try (PreparedStatement ps = connection().prepareStatement(sql)) {
-            bind(ps, args);
+        return exec(sql, args, Map.of());
+    }
+
+    /** Runs a statement with mixed {@code ?} and {@code :name} parameters. */
+    public long exec(String sql, List<Object> args, Map<String, Object> named) {
+        Bound bound = Bound.of(sql, args, named);
+        try (PreparedStatement ps = connection().prepareStatement(bound.sql())) {
+            bind(ps, bound.args());
             return ps.executeUpdate();
         } catch (SQLException e) {
             throw failure("db.exec", e);
@@ -66,15 +83,112 @@ public final class Db implements AutoCloseable {
 
     /** The first row of a query, or nil. */
     public Object get(String sql, List<Object> args) {
-        List<Object> rows = query(sql, args);
+        return get(sql, args, Map.of());
+    }
+
+    /** The first row of a query with mixed {@code ?} and {@code :name} parameters. */
+    public Object get(String sql, List<Object> args, Map<String, Object> named) {
+        List<Object> rows = query(sql, args, named);
         return rows.isEmpty() ? null : rows.get(0);
     }
 
-    /** Runs a {@code schema.sql} file, one {@code ;}-separated statement at a time. */
+    /** SQL with every named placeholder rewritten to {@code ?} and the values in placeholder order. */
+    private record Bound(String sql, List<Object> args) {
+        static Bound of(String sql, List<Object> positional, Map<String, Object> named) {
+            Map<String, Object> values = named == null ? Map.of() : named;
+            StringBuilder out = new StringBuilder(sql.length());
+            List<Object> bound = new ArrayList<>();
+            Set<String> used = new HashSet<>();
+            int next = 0;
+            int i = 0;
+            while (i < sql.length()) {
+                char c = sql.charAt(i);
+                if (c == '\'' || c == '"' || c == '`') {
+                    int end = quoted(sql, i, c);
+                    out.append(sql, i, end);
+                    i = end;
+                } else if (c == '[') {
+                    int end = sql.indexOf(']', i + 1);
+                    end = end < 0 ? sql.length() : end + 1;
+                    out.append(sql, i, end);
+                    i = end;
+                } else if (c == '-' && i + 1 < sql.length() && sql.charAt(i + 1) == '-') {
+                    int end = sql.indexOf('\n', i + 2);
+                    end = end < 0 ? sql.length() : end;
+                    out.append(sql, i, end);
+                    i = end;
+                } else if (c == '/' && i + 1 < sql.length() && sql.charAt(i + 1) == '*') {
+                    int end = sql.indexOf("*/", i + 2);
+                    end = end < 0 ? sql.length() : end + 2;
+                    out.append(sql, i, end);
+                    i = end;
+                } else if (c == '?') {
+                    if (i + 1 < sql.length() && Character.isDigit(sql.charAt(i + 1))) {
+                        throw new WhyError("numbered '?' parameters are not supported; use '?' or ':name'");
+                    }
+                    if (next >= positional.size()) {
+                        throw new WhyError("db needs a value for every '?'");
+                    }
+                    out.append('?');
+                    bound.add(positional.get(next++));
+                    i++;
+                } else if (c == ':' && i + 1 < sql.length() && nameStart(sql.charAt(i + 1))) {
+                    int end = i + 2;
+                    while (end < sql.length() && namePart(sql.charAt(end))) end++;
+                    String name = sql.substring(i + 1, end);
+                    if (!values.containsKey(name)) {
+                        throw new WhyError("db needs a value for named parameter ':" + name + "'");
+                    }
+                    out.append('?');
+                    bound.add(values.get(name));
+                    used.add(name);
+                    i = end;
+                } else {
+                    out.append(c);
+                    i++;
+                }
+            }
+            if (next < positional.size()) {
+                throw new WhyError("db received more arguments than the SQL uses");
+            }
+            for (String name : values.keySet()) {
+                if (!used.contains(name)) {
+                    throw new WhyError("db named parameter '" + name + "' is not used in the SQL");
+                }
+            }
+            return new Bound(out.toString(), bound);
+        }
+
+        /** The end of a quoted string or identifier, including doubled quote escapes. */
+        private static int quoted(String sql, int start, char quote) {
+            int i = start + 1;
+            while (i < sql.length()) {
+                if (sql.charAt(i) == quote) {
+                    if (i + 1 < sql.length() && sql.charAt(i + 1) == quote) {
+                        i += 2;
+                        continue;
+                    }
+                    return i + 1;
+                }
+                i++;
+            }
+            return sql.length();
+        }
+
+        private static boolean nameStart(char c) {
+            return Character.isLetter(c) || c == '_';
+        }
+
+        private static boolean namePart(char c) {
+            return Character.isLetterOrDigit(c) || c == '_';
+        }
+    }
+
+    /** Runs a {@code schema.sql} file, one top-level statement at a time. */
     public static void applyScript(Path dbFile, String script) {
         try (Db db = new Db(dbFile)) {
-            for (String statement : script.split(";")) {
-                if (!statement.isBlank()) db.exec(statement, List.of());
+            for (String statement : SqlScript.statements(script)) {
+                db.exec(statement, List.of());
             }
         }
     }
@@ -104,6 +218,9 @@ public final class Db implements AutoCloseable {
             try (Statement statement = conn.createStatement()) {
                 statement.execute("pragma journal_mode = WAL");
                 statement.execute("pragma busy_timeout = " + BUSY_TIMEOUT_MILLIS);
+                // SQLite defaults foreign keys off. Every page connection enforces the schema's
+                // declared references, including on delete cascades.
+                statement.execute("pragma foreign_keys = on");
             }
             ProgressHandler.setHandler(conn, PROGRESS_VM_CALLS, ABORT_ON_INTERRUPT);
             return conn;

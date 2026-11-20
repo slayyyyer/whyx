@@ -56,6 +56,21 @@ public final class Session {
     }
 
     /**
+     * Stores the signed-in user and rotates the session ID in one step. Call this only after the
+     * credentials have been verified. Values from before the sign-in are cleared, so a page should
+     * set any welcome message after this call.
+     */
+    public void login(Object userId) {
+        String id = Value.str(userId);
+        if (id.isBlank()) {
+            throw new WhyError("session.login needs a user id");
+        }
+        clear();
+        set("user_id", id);
+        rotate();
+    }
+
+    /**
      * Asks for a fresh session ID on the next response and retires the current one.
      * A page calls this after signing someone in, so a session cookie issued before the
      * login cannot be replayed into the signed-in session.

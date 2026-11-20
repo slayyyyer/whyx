@@ -34,6 +34,7 @@
         <a href="#language">The language</a>
         <a href="#views">Views</a>
         <a href="#request">Request globals</a>
+        <a href="#sessions">Sessions and passwords</a>
         <a href="#database">The database</a>
         <a href="#responses">Responses and flash</a>
         <a href="#forms">Forms</a>
@@ -130,7 +131,7 @@ end</code></pre></div>
           <li>Only <code>nil</code> and <code>false</code> are falsy. <code>0</code> and <code>""</code> are truthy, so empty states use <code>count &gt; 0</code>, not <code>if count</code>.</li>
           <li>Undefined names read as <code>nil</code> instead of raising.</li>
           <li>Missing arguments become <code>nil</code>; extra arguments are ignored.</li>
-          <li>There are no classes, modules, exceptions, keyword arguments or first-class functions.</li>
+          <li>There are no classes, modules, exceptions or first-class functions. A trailing <code>name: value</code> in a call is a hash, which is how <code>db.query</code> takes named parameters.</li>
         </ul>
 
         <h3>Built-in methods</h3>
@@ -142,10 +143,11 @@ end</code></pre></div>
               <tr><td>Lists</td><td><code>length</code>, <code>size</code>, <code>first</code>, <code>last</code>, <code>push</code>, <code>append</code>, <code>join</code>, <code>include?</code>, <code>reverse</code>, <code>sum</code>, <code>each</code>, <code>map</code>, <code>select</code> (the last three with a block)</td></tr>
               <tr><td>Hashes</td><td><code>keys</code>, <code>values</code>, <code>length</code>, <code>size</code>, <code>has_key?</code>, <code>each</code> (with a block)</td></tr>
               <tr><td>Numbers</td><td><code>to_i</code>, <code>to_f</code>, <code>abs</code>, <code>round</code></td></tr>
-              <tr><td>Functions</td><td><code>str(x)</code>, <code>int(x)</code>, <code>float(x)</code>, <code>redirect(path)</code></td></tr>
+              <tr><td>Functions</td><td><code>str(x)</code>, <code>int(x)</code>, <code>float(x)</code>, <code>redirect(path)</code>, <code>redirect_back(fallback)</code>, <code>status(code)</code>, <code>halt(code)</code>, <code>pbkdf2(password, salt, iterations)</code>, <code>password_hash(password, iterations)</code>, <code>password_matches(password, stored)</code>, <code>password_needs_rehash(stored, iterations)</code></td></tr>
             </tbody>
           </table>
         </div>
+        <p>Strings are indexed by character: <code>"why"[0]</code> is <code>"w"</code>, <code>"why"[-1]</code> is <code>"y"</code>, and an index past either end is <code>nil</code>.</p>
 
         <h2 id="views">Views</h2>
         <p>Mustaches hold real controller expressions. Output is escaped by default.</p>
@@ -179,22 +181,43 @@ end</code></pre></div>
               <tr><td><code>request</code></td><td>A hash with <code>method</code>, <code>path</code>, <code>query</code>, <code>params</code> and <code>form</code>.</td></tr>
               <tr><td><code>flash</code></td><td>One-shot messages carried to the next page request. <code>flash.set("notice", "…")</code>; read with <code>{{flash.notice}}</code> or <code>flash.get("notice")</code>.</td></tr>
               <tr><td><code>csrf</code></td><td><code>csrf.token</code>, a per-browser secret for form posts. It rides an HttpOnly <code>why_csrf</code> cookie, so it survives a restart and needs no server-side state. A POST without the matching <code>_token</code> field is rejected with 403.</td></tr>
+              <tr><td><code>session</code></td><td>Small server-side values for this browser, stored in <code>why_sessions</code> and named by the HttpOnly <code>why_sid</code> cookie. <code>session.login</code>, <code>session.get</code>, <code>session.set</code>, <code>session.clear</code> and <code>session.rotate</code>; see below.</td></tr>
               <tr><td><code>response</code></td><td>Response controls: <code>response.status(201)</code>, <code>response.header("X-Why", "…")</code>, <code>response.json(hash)</code> and <code>response.csp("…")</code>.</td></tr>
             </tbody>
           </table>
         </div>
         <p>A page that writes branches on <code>request.method == "POST"</code>. There is no separate POST-only page.</p>
 
+        <h2 id="sessions">Sessions and passwords</h2>
+        <p><code>session</code> keeps small values for one browser across requests and server restarts. They live in the site database (<code>why_sessions</code>) and are named by the HttpOnly <code>why_sid</code> cookie.</p>
+        <div class="code"><div class="code-title">controller</div><pre><code>session.login(user.id)            # clear values, set user_id, rotate the session ID
+me = session.get("user_id")
+session.set("notice", nil)        # nil removes the name
+session.clear()                   # sign out
+session.rotate()                  # rotate manually when a page manages its own sign-in</code></pre></div>
+        <p>The cookie lasts 30 idle days; every page that loads a live session slides that window, and expired rows are pruned when a session is written. Use <code>session.login(user.id)</code> after verifying credentials: it clears values from before sign-in, stores <code>user_id</code>, and rotates the session ID, so a pre-login cookie cannot be replayed. Set any welcome flash after <code>session.login</code>. <code>session.rotate()</code> remains available when a page manages its own sign-in state. A session holds at most 32 names, 64-character names and 4096-character values.</p>
+        <p><code>pbkdf2(password, salt, iterations)</code> derives a 32-byte PBKDF2-HMAC-SHA256 key and returns lowercase hex. The API accepts 10,000 to 1,000,000 iterations; use at least 600,000 for new PBKDF2-HMAC-SHA256 hashes. Store the parameters with the key, as <code>pbkdf2-sha256$600000$&lt;salt&gt;$&lt;key&gt;</code>, so the cost can be raised later. <code>password_matches(password, stored)</code> parses that row and compares the keys in constant time; a malformed row is a failed match. <code>password_hash(password, iterations)</code> generates a fresh 16-byte salt and the row to store. <code>password_needs_rehash(stored, iterations)</code> is true when a row is malformed or costs less than <code>iterations</code>, so a sign-in can replace it while the password is in hand. Never store the password itself.</p>
+
         <h2 id="database">The database</h2>
-        <p>Every page request gets a SQLite connection through the <code>db</code> global. Arguments are bound as prepared-statement parameters.</p>
+        <p>Every page request gets a SQLite connection through the <code>db</code> global. Arguments are bound as prepared-statement parameters; a trailing <code>name: value</code> binds <code>:name</code> wherever it appears in the SQL.</p>
         <div class="code"><div class="code-title">queries and writes</div><pre><code>posts = db.query("select * from posts order by id desc")
 post  = db.get("select * from posts where id = ?", id)
 n     = db.exec("insert into posts (title) values (?)", title)</code></pre></div>
+        <p>A named parameter may repeat, and can be mixed with positional <code>?</code> parameters:</p>
+        <div class="code"><div class="code-title">named parameters</div><pre><code>db.query("select * from posts where user_id = :who or id in (select post_id from likes where user_id = :who)", who: uid)
+db.query("select * from posts where id = ? and user_id = :who", id, who: uid)</code></pre></div>
+        <p>Names are checked: a missing value and an unused name both raise. Numbered placeholders such as <code>?1</code> are rejected; use <code>?</code> or a name. Use <code>#{}</code> only for SQL structure, never for values. Identifiers cannot be parameters, so a dynamic table or column goes through an explicit allowlist:</p>
+        <div class="code"><div class="code-title">checked identifiers</div><pre><code>table = sql.ident(params.table, ["likes", "reposts"])
+db.exec("delete from " + table + " where user_id = ?", uid)</code></pre></div>
         <p>Rows are hashes keyed by column label, so <code>{{it.title}}</code> and <code>post.title</code> work. A query is capped at 10,000 rows and 4 MiB of column labels and values; a larger result raises a page error instead of loading without bound. If <code>data.db</code> does not exist and <code>schema.sql</code> exists, the script runs once.</p>
         <p>A <code>migrations/</code> folder takes over the schema: every <code>.sql</code> file in it applies once, in filename order, each in its own transaction, recorded in a <code>schema_migrations</code> table. A fresh database runs them in order; an existing one applies only what is pending, so schema changes upgrade in place.</p>
+        <p>Every connection enables <code>PRAGMA foreign_keys</code>, so declared references and <code>on delete cascade</code> are enforced. The migration runner turns enforcement off while a table is rebuilt and runs <code>foreign_key_check</code> before recording each migration.</p>
+        <p>A migration is recorded with a SHA-256 checksum when it runs. Editing an applied file raises instead of being ignored, so add a new migration. Statements split at top-level semicolons, so strings and <code>CREATE TRIGGER ... BEGIN ... END</code> bodies keep their own.</p>
+        <p><code>seed.sql</code> is demo data, not schema. With <code>--dev</code> it runs once after the migrations, and only when the database file did not exist before that boot. A deployed site with a persistent disk never re-inserts rows; an ephemeral host that starts empty still gets its demo users. Write the seed with <code>insert or ignore</code> so applying it by hand is safe too.</p>
 
         <h2 id="responses">Responses and flash</h2>
-        <p><code>redirect("/path")</code> stops the page and answers <code>303 See Other</code>. The target must be a path-absolute same-origin path; absolute URLs and protocol-relative locations are rejected.</p>
+        <p><code>redirect("/path")</code> stops the page and answers <code>303 See Other</code>. The target must be a single-slash local path; absolute URLs, protocol-relative locations, backslash variants and whitespace are rejected. <code>redirect_back("/")</code> uses the posted <code>back</code> field when it is such a path and the fallback otherwise.</p>
+        <p><code>status(404)</code> sets the response status and keeps rendering, which is how a page answers a missing record with a 404 body. <code>halt(404)</code> sets the status and stops the page before the view renders. Both are also available as <code>response.status(...)</code>.</p>
         <p>Every response carries <code>X-Content-Type-Options: nosniff</code>, <code>Referrer-Policy: no-referrer</code>, <code>Content-Security-Policy: frame-ancestors 'none'</code> and <code>X-Frame-Options: DENY</code>. A page opts into a fuller policy in its controller:</p>
         <div class="code"><div class="code-title">controller</div><pre><code>response.csp("default-src 'self'; img-src 'self' data:")</code></pre></div>
         <p>The default <code>frame-ancestors 'none'</code> is appended unless the policy sets its own <code>frame-ancestors</code>. The value must be printable ASCII on one line.</p>
@@ -271,8 +294,12 @@ java -jar build/libs/why.jar ./site --host 0.0.0.0
 # behind TLS, mark session cookies Secure
 java -jar build/libs/why.jar ./site --secure-cookies
 
+# behind a loopback TLS proxy, trust its forwarded client IP and proto
+java -jar build/libs/why.jar ./site --trust-proxy
+
 # parse and check every page without serving it
 java -jar build/libs/why.jar check ./site</code></pre></div>
+        <p><code>PORT</code>, <code>HOST</code>, <code>WHY_DB</code> and <code>WHY_SECURE_COOKIES</code> supply the defaults for <code>--port</code>, <code>--host</code>, <code>--db</code> and <code>--secure-cookies</code>, so a container does not need a shell wrapper. <code>--trust-proxy</code> marks cookies <code>Secure</code> when a loopback proxy forwards <code>X-Forwarded-Proto: https</code>, and derives <code>request.remote</code> from the last <code>X-Forwarded-For</code> hop that is not loopback; both headers are ignored from any other peer.</p>
         <p><code>check</code> reports unresolved imports and partials, duplicate defs, undefined function calls and URL collisions, then prints a page map. It exits 1 when it finds anything and never touches the database.</p>
         <div class="code"><div class="code-title">why check</div><pre><code>checking 3 pages in /srv/why/site
 

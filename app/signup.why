@@ -14,26 +14,35 @@ handle = clean_handle(form.handle)
 e_name = nil
 e_handle = nil
 e_password = nil
+e_form = nil
 if request.method == "POST"
-  errors = validate(form, {name: "required,max:50", handle: "required,min:3,max:15", password: "required,min:6"})
-  e_name = errors.name
-  e_handle = errors.handle
-  e_password = errors.password
-  if e_name == nil and e_handle == nil and e_password == nil
-    taken = db.get("select id from users where handle = ?", handle)
-    if taken
-      e_handle = "is already taken"
-    else
-      salt = db.query("select lower(hex(randomblob(16))) as s").first.s
-      stored = "pbkdf2-sha256$" + str(rounds()) + "$" + salt + "$" + pbkdf2(str(form.password), salt, rounds())
-      colors = ["#1d9bf0", "#f91880", "#00ba7c", "#ffd400", "#7856ff", "#ff7a00"]
-      color = colors[db.query("select count(*) as n from users").first.n % 6]
-      db.exec("insert into users (handle, name, bio, location, color, password_hash) values (?, ?, ?, ?, ?, ?)", handle, name.strip, "", "", color, stored)
-      created = db.get("select id from users where handle = ?", handle)
-      session.set("user_id", created.id)
-      session.rotate()
-      flash.set("notice", "Welcome to whyx, " + name.strip + ".")
-      redirect("/")
+  ip = str(request.remote)
+  # Five accounts per address inside the sign-in window. The attempt log is shared with sign-in,
+  # so the limit survives a restart and needs no extra table.
+  if login_blocked(db, "signup", ip, signup_limit())
+    e_form = "Too many accounts from this address. Wait a few minutes and try again."
+  else
+    fields = {name: form.name, handle: handle, password: form.password}
+    errors = validate(fields, {name: "required,max:50", handle: "required,min:3,max:15", password: "required,min:6"})
+    e_name = errors.name
+    e_handle = errors.handle
+    e_password = errors.password
+    if e_name == nil and e_handle == nil and e_password == nil
+      taken = db.get("select id from users where handle = ?", handle)
+      if taken
+        e_handle = "is already taken"
+      else
+        salt = db.query("select lower(hex(randomblob(16))) as s").first.s
+        stored = "pbkdf2-sha256$" + str(rounds()) + "$" + salt + "$" + pbkdf2(str(form.password), salt, rounds())
+        colors = ["#1d9bf0", "#f91880", "#00ba7c", "#ffd400", "#7856ff", "#ff7a00"]
+        color = colors[db.query("select count(*) as n from users").first.n % 6]
+        db.exec("insert into users (handle, name, bio, location, color, password_hash) values (?, ?, ?, ?, ?, ?)", handle, name.strip, "", "", color, stored)
+        login_failed(db, "signup", ip)
+        created = db.get("select id from users where handle = ?", handle)
+        session.login(created.id)
+        flash.set("notice", "Welcome to whyx, " + name.strip + ".")
+        redirect("/")
+      end
     end
   end
 end
@@ -45,6 +54,7 @@ view:
     <svg viewBox="0 0 24 24" width="36" height="36" fill="currentColor"><path d="M23 4.9c-.8.4-1.7.7-2.6.8a4.5 4.5 0 0 0 2-2.5c-.9.5-1.9.9-3 1.1a4.5 4.5 0 0 0-7.7 4.1A12.8 12.8 0 0 1 2.4 3.6a4.5 4.5 0 0 0 1.4 6 4.4 4.4 0 0 1-2-.6v.1a4.5 4.5 0 0 0 3.6 4.4 4.5 4.5 0 0 1-2 .1 4.5 4.5 0 0 0 4.2 3.1A9 9 0 0 1 1 18.7a12.7 12.7 0 0 0 6.9 2c8.3 0 12.8-6.9 12.8-12.8v-.6c.9-.6 1.6-1.4 2.3-2.4z"/></svg>
   </a>
   <h1>Create your account</h1>
+  {{#if e_form}}<p class="error">{{e_form}}</p>{{/if}}
   <form method="post" action="/signup">
     <input type="hidden" name="_token" value="{{csrf.token}}">
     <label>Name

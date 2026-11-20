@@ -47,23 +47,39 @@ release; the deployment status endpoint can lag or answer `500` while it settles
 artifacts themselves:
 
 ```bash
-curl -fI https://repo1.maven.org/maven2/io/github/slayyyyer/why-lang/0.1.0/why-lang-0.1.0.pom
+curl -fI https://repo1.maven.org/maven2/io/github/slayyyyer/why-lang/0.2.0/why-lang-0.2.0.pom
 ```
 
 ## Publishing the plugin to the Gradle Plugin Portal
 
 The plugin also publishes to the Portal, which is what lets `plugins { id("io.github.slayyyyer.why") }`
 resolve without a `pluginManagement` block. The build carries `com.gradle.plugin-publish`; the
-credentials are a Portal token, not the Central one:
+credentials are a Portal token, not the Central one.
+
+Store the token in your user-level Gradle properties, not in the repository:
+
+```properties
+# ~/.gradle/gradle.properties
+gradle.publish.key=...
+gradle.publish.secret=...
+```
+
+The plugin declaration must include at least one tag. The build sets `tags` in
+`why-gradle-plugin/build.gradle.kts`; without it, `publishPlugins` fails with
+`Plugin 'why' has no 'tags' property set`.
+
+Run the publication after the Central artifacts are live, because the marker POM points at
+`io.github.slayyyyer:why-gradle-plugin` on Maven Central:
 
 ```bash
-export GRADLE_PUBLISH_KEY='...'
-export GRADLE_PUBLISH_SECRET='...'
 ./gradlew --no-daemon publishPlugins
 ```
 
-Run it after the Central artifacts are live, because the plugin's POM points at
-`io.github.slayyyyer:why-lang` on Maven Central.
+Then verify the portal lists the new version:
+
+```bash
+curl -fsSL https://plugins.gradle.org/plugin/io.github.slayyyyer.why | grep 'Version'
+```
 
 ## Skipping the prompts
 

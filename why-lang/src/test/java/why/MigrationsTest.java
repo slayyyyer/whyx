@@ -66,6 +66,122 @@ class MigrationsTest {
     }
 
     @Test
+    void aMigrationThatLeavesADanglingReferenceIsRolledBack() throws Exception {
+        migration("0001_parents.sql", """
+                create table parents (id integer primary key);
+                create table children (id integer primary key,
+                  parent_id integer not null references parents(id) on delete cascade);
+                insert into parents (id) values (1);
+                insert into children (id, parent_id) values (1, 1);
+                """);
+        migration("0002_broken.sql", "insert into children (id, parent_id) values (2, 99);");
+        Path database = dir.resolve("data.db");
+
+        assertThrows(WhyError.class, () -> Migrations.apply(dir, database));
+        assertEquals(1, rows(database, "select id from children").size(),
+                "a migration with a dangling reference should roll back");
+        assertTrue(rows(database, "select name from " + Migrations.TABLE).stream()
+                        .noneMatch(row -> "0002_broken.sql".equals(
+                                ((java.util.Map<?, ?>) row).get("name"))),
+                "the failed migration should not be recorded");
+    }
+
+    @Test
+    void aTableRebuildKeepsRowsAndCascades() throws Exception {
+        migration("0001_old.sql", """
+                create table users (id integer primary key);
+                create table posts (id integer primary key, user_id integer not null,
+                  parent_id integer, body text not null);
+                insert into users (id) values (1);
+                insert into posts (id, user_id, parent_id, body) values (1, 1, null, 'root');
+                insert into posts (id, user_id, parent_id, body) values (2, 1, 1, 'reply');
+                """);
+        migration("0002_keys.sql", """
+                create table posts_new (
+                  id integer primary key,
+                  user_id integer not null references users(id) on delete cascade,
+                  parent_id integer references posts(id) on delete cascade,
+                  body text not null
+                );
+                insert into posts_new (id, user_id, parent_id, body)
+                  select id, user_id, parent_id, body from posts;
+                drop table posts;
+                alter table posts_new rename to posts;
+                """);
+        Path database = dir.resolve("data.db");
+
+        assertEquals(2, Migrations.apply(dir, database));
+        assertEquals(2, rows(database, "select id from posts").size(),
+                "the rebuild should keep every row");
+        try (Db db = new Db(database)) {
+            db.exec("delete from posts where id = 1", List.of());
+            assertEquals(0, db.query("select id from posts", List.of()).size(),
+                    "the rebuilt self-reference should cascade");
+        }
+    }
+
+    @Test
+    void anAppliedMigrationCannotBeEdited() throws Exception {
+        migration("0001_notes.sql", "create table notes (id integer primary key);");
+        Path database = dir.resolve("data.db");
+        assertEquals(1, Migrations.apply(dir, database));
+
+        String checksum = String.valueOf(((java.util.Map<?, ?>) rows(database,
+                "select checksum from " + Migrations.TABLE + " where name = '0001_notes.sql'")
+                .get(0)).get("checksum"));
+        assertTrue(checksum.matches("[0-9a-f]{64}"), checksum);
+
+        migration("0001_notes.sql", "create table notes (id integer primary key, body text);");
+        migration("0002_more.sql", "create table more (id integer primary key);");
+
+        WhyError error = assertThrows(WhyError.class, () -> Migrations.apply(dir, database));
+        assertTrue(error.getMessage().contains("changed after it was applied"), error.getMessage());
+        assertTrue(rows(database, "select name from " + Migrations.TABLE).stream()
+                        .noneMatch(row -> "0002_more.sql".equals(
+                                ((java.util.Map<?, ?>) row).get("name"))),
+                "a pending migration ran before the checksum check");
+    }
+
+    @Test
+    void aMigrationRecordedBeforeChecksumsGetsABaseline() throws Exception {
+        migration("0001_notes.sql", "create table notes (id integer primary key);");
+        Path database = dir.resolve("data.db");
+        try (Db db = new Db(database)) {
+            db.exec("create table notes (id integer primary key)", List.of());
+            db.exec("create table " + Migrations.TABLE
+                    + " (name text primary key, applied_at text not null default current_timestamp)",
+                    List.of());
+            db.exec("insert into " + Migrations.TABLE + " (name) values ('0001_notes.sql')",
+                    List.of());
+        }
+
+        assertEquals(0, Migrations.apply(dir, database));
+        String checksum = String.valueOf(((java.util.Map<?, ?>) rows(database,
+                "select checksum from " + Migrations.TABLE + " where name = '0001_notes.sql'")
+                .get(0)).get("checksum"));
+        assertTrue(checksum.matches("[0-9a-f]{64}"), checksum);
+    }
+
+    @Test
+    void aTriggerBodyIsOneStatement() throws Exception {
+        migration("0001_notes.sql", """
+                create table notes (id integer primary key, body text);
+                create table audit (body text);
+                create trigger note_audit after insert on notes begin
+                  insert into audit (body) values ('seen; ' || new.body);
+                end;
+                """);
+        Path database = dir.resolve("data.db");
+        assertEquals(1, Migrations.apply(dir, database));
+
+        try (Db db = new Db(database)) {
+            db.exec("insert into notes (body) values ('a;b')", List.of());
+            assertEquals("seen; a;b",
+                    ((java.util.Map<?, ?>) db.get("select body from audit", List.of())).get("body"));
+        }
+    }
+
+    @Test
     void aMissingFolderDoesNothing() throws Exception {
         Path database = dir.resolve("data.db");
         assertEquals(0, Migrations.apply(dir, database));

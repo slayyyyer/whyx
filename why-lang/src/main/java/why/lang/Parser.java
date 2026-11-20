@@ -323,15 +323,28 @@ public final class Parser {
     private List<Ast.Expr> arguments() {
         expectOp("(");
         List<Ast.Expr> args = new ArrayList<>();
+        List<Ast.Pair> named = new ArrayList<>();
+        boolean sawNamed = false;
         skipNewlines();
         if (!checkOp(")")) {
             do {
                 skipNewlines();
-                args.add(expression());
+                if (peek().type() == Token.Type.IDENT && peek(1).type() == Token.Type.OP
+                        && peek(1).text().equals(":")) {
+                    Token key = next();
+                    next();
+                    named.add(new Ast.Pair(new Ast.StrLit(key.text(), key.line()), expression()));
+                    sawNamed = true;
+                } else {
+                    if (sawNamed) throw error(peek(), "positional arguments cannot follow named arguments");
+                    args.add(expression());
+                }
                 skipNewlines();
             } while (matchOp(","));
         }
         expectOp(")");
+        // Named arguments are a trailing hash, which is how db.query(sql, who: uid) gets its map.
+        if (!named.isEmpty()) args.add(new Ast.HashLit(named, named.get(0).key().line()));
         return args;
     }
 

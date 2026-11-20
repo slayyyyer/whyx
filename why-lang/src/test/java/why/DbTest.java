@@ -1,5 +1,6 @@
 package why;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -77,6 +78,44 @@ class DbTest {
 
             assertFalse(writer.isAlive(), "the second writer never completed");
             assertNull(outcome.get(), () -> "the second writer failed: " + outcome.get());
+        }
+    }
+
+    @Test
+    void foreignKeysAreEnforcedAndCascade() throws Exception {
+        try (Db db = new Db(dir.resolve("foreign.db"))) {
+            db.exec("create table parents (id integer primary key)", List.of());
+            db.exec("create table children (id integer primary key,"
+                    + " parent_id integer not null references parents(id) on delete cascade)",
+                    List.of());
+            db.exec("insert into parents (id) values (1)", List.of());
+            db.exec("insert into children (id, parent_id) values (1, 1)", List.of());
+
+            assertThrows(WhyError.class,
+                    () -> db.exec("insert into children (id, parent_id) values (2, 99)", List.of()));
+
+            db.exec("delete from parents where id = 1", List.of());
+            assertEquals(0, db.query("select id from children", List.of()).size(),
+                    "the child should cascade with its parent");
+        }
+    }
+
+    @Test
+    void applyScriptKeepsTriggerBodiesAndStringsTogether() throws Exception {
+        Path file = dir.resolve("script.db");
+        Db.applyScript(file, """
+                create table notes (id integer primary key, body text);
+                create table audit (body text);
+                create trigger note_audit after insert on notes begin
+                  insert into audit (body) values ('seen; ' || new.body);
+                end;
+                insert into notes (body) values ('a;b');
+                """);
+
+        try (Db db = new Db(file)) {
+            assertEquals(1, db.query("select body from notes where body = 'a;b'", List.of()).size());
+            assertEquals("seen; a;b",
+                    ((java.util.Map<?, ?>) db.get("select body from audit", List.of())).get("body"));
         }
     }
 

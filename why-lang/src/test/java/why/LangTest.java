@@ -182,15 +182,15 @@ class LangTest {
 
     @Test
     void pbkdf2DerivesAnIteratedPasswordKey() {
-        // PBKDF2-HMAC-SHA256("password", "salt", 1 iteration, 32 bytes).
-        assertEquals("120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b",
-                eval("pbkdf2(\"password\", \"salt\", 1)"));
+        // PBKDF2-HMAC-SHA256("password", "salt", 10000 iterations, 32 bytes).
+        assertEquals("5ec02b91a4b59c6f59dd5fbe4ca649ece4fa8568cdb8ba36cf41426e8805522b",
+                eval("pbkdf2(\"password\", \"salt\", 10000)"));
 
         Scope scope = run("""
-                one = pbkdf2("whylang", "salt-a", 1000)
-                again = pbkdf2("whylang", "salt-a", 1000)
-                otherSalt = pbkdf2("whylang", "salt-b", 1000)
-                otherRounds = pbkdf2("whylang", "salt-a", 2000)
+                one = pbkdf2("whylang", "salt-a", 10000)
+                again = pbkdf2("whylang", "salt-a", 10000)
+                otherSalt = pbkdf2("whylang", "salt-b", 10000)
+                otherRounds = pbkdf2("whylang", "salt-a", 20000)
                 """);
         assertEquals(scope.get("one"), scope.get("again"), "the same inputs must derive the same key");
         assertNotEquals(scope.get("one"), scope.get("otherSalt"), "the salt must change the key");
@@ -203,8 +203,21 @@ class LangTest {
     void pbkdf2RejectsImpossibleArguments() {
         assertThrows(WhyError.class, () -> eval("pbkdf2(\"a\", \"s\", 0)"));
         assertThrows(WhyError.class, () -> eval("pbkdf2(\"a\", \"s\", -5)"));
+        assertThrows(WhyError.class, () -> eval("pbkdf2(\"a\", \"s\", 1)"));
+        assertThrows(WhyError.class, () -> eval("pbkdf2(\"a\", \"s\", 9999)"));
         assertThrows(WhyError.class, () -> eval("pbkdf2(\"a\", \"s\", 5000000)"));
         assertThrows(WhyError.class, () -> eval("pbkdf2(\"a\")"));
+    }
+
+    @Test
+    void namedArgumentsBecomeATrailingHash() {
+        Scope scope = run("""
+                def pick(h)
+                  h.who
+                end
+                value = pick(who: 7)
+                """);
+        assertEquals(7L, scope.get("value"));
     }
 
     @Test

@@ -49,7 +49,13 @@ public final class TestServer implements AutoCloseable {
 
     /** Starts a server, optionally with development diagnostics in error pages. */
     public static TestServer start(Site site, boolean diagnostics) throws IOException {
-        WhyServer server = new WhyServer(site, "127.0.0.1", 0, diagnostics, false);
+        return start(site, diagnostics, false, false);
+    }
+
+    /** Starts a server with explicit cookie and proxy settings. */
+    public static TestServer start(Site site, boolean diagnostics, boolean secureCookies,
+            boolean trustProxy) throws IOException {
+        WhyServer server = new WhyServer(site, "127.0.0.1", 0, diagnostics, secureCookies, trustProxy);
         server.start();
         return new TestServer(server);
     }

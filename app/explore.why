@@ -17,10 +17,10 @@ end
 posts = []
 people = []
 if q.length > 0
-  posts = db.query(posts_from(uid) + " where p.body like ? order by p.id desc limit 40", "%" + q + "%")
+  posts = db.query(posts_from() + " where p.body like ? order by p.id desc limit 40", "%" + q + "%", who: uid)
   people = db.query("select u.id as id, u.handle as handle, u.name as name, u.bio as bio, u.color as color, (select count(*) from follows f where f.followee_id = u.id) as followers from users u where u.handle like ? or u.name like ? order by followers desc limit 10", "%" + q + "%", "%" + q + "%")
 else
-  posts = db.query(posts_from(uid) + " where p.created_at > datetime('now', '-7 days') order by likes desc, p.id desc limit 20")
+  posts = db.query(posts_from() + " where p.created_at > datetime('now', '-7 days') order by likes desc, p.id desc limit 20", who: uid)
 end
 popular = trending(db, uid)
 suggestions = who_to_follow(db, uid)

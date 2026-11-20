@@ -28,9 +28,12 @@ if request.method == "POST"
     # pay the full derivation and both land on the same message, so neither reveals the other.
     ok = password_matches(password, stored)
     if user != nil and ok
+      # A row written under an older cost is upgraded while the password is in hand.
+      if password_needs_rehash(stored, rounds())
+        db.exec("update users set password_hash = ? where id = ?", password_hash(password, rounds()), user.id)
+      end
       login_succeeded(db, handle)
-      session.set("user_id", user.id)
-      session.rotate()
+      session.login(user.id)
       flash.set("notice", "Welcome back, " + user.name + ".")
       redirect("/")
     else

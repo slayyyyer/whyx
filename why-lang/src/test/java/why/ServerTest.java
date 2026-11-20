@@ -628,7 +628,7 @@ class ServerTest {
 
         HttpResponse<String> response = get("/external-redirect");
         assertEquals(500, response.statusCode());
-        assertTrue(response.body().contains("same-origin"));
+        assertTrue(response.body().contains("local path"));
     }
 
     @Test

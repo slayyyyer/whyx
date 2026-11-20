@@ -9,9 +9,6 @@ end
 uid = me.id
 action = str(form.action)
 back = str(form.back)
-if back.start_with?("//") or back.start_with?("/") == false
-  back = "/"
-end
 
 if action == "post"
   body = str(form.body).strip
@@ -34,6 +31,7 @@ elsif action == "like" or action == "repost"
   if action == "repost"
     table = "reposts"
   end
+  table = sql.ident(table, ["likes", "reposts"])
   post_id = int(form.post_id)
   if db.get("select id from posts where id = ?", post_id)
     if db.get("select 1 as ok from " + table + " where user_id = ? and post_id = ?", uid, post_id)
@@ -56,18 +54,17 @@ elsif action == "follow"
 elsif action == "delete"
   post_id = int(form.post_id)
   if db.get("select id from posts where id = ? and user_id = ?", post_id, uid)
-    db.exec("delete from likes where post_id = ?", post_id)
-    db.exec("delete from reposts where post_id = ?", post_id)
-    db.exec("delete from posts where parent_id = ?", post_id)
+    # Replies, likes and reposts cascade from the post's foreign keys.
     db.exec("delete from posts where id = ?", post_id)
-    # The page being returned to was the deleted post, so go home instead of a 404.
-    if back == "/post?id=" + str(post_id)
-      back = "/"
-    end
     flash.set("notice", "Post deleted.")
+    # The page being returned to was the deleted post, so go home instead of a 404.
+    # redirect_back reads the posted back field, so this override must redirect directly.
+    if back == "/post?id=" + str(post_id)
+      redirect("/")
+    end
   end
 end
-redirect(back)
+redirect_back("/")
 
 view:
 <p>Working…</p>

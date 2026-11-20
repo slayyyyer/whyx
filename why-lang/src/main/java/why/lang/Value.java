@@ -29,6 +29,7 @@ public final class Value {
         if (v instanceof List) return "list";
         if (v instanceof Map) return "hash";
         if (v instanceof Db) return "db";
+        if (v instanceof Sql) return "sql";
         return v.getClass().getSimpleName();
     }
 

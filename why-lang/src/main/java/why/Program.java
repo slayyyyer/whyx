@@ -5,7 +5,9 @@ import java.util.Map;
 
 import why.lang.Ast;
 import why.lang.ExecutionBudget;
+import why.lang.Halt;
 import why.lang.Interpreter;
+import why.lang.Sql;
 import why.lang.Scope;
 import why.tpl.Template;
 
@@ -68,12 +70,19 @@ public final class Program {
     public String render(Map<String, Object> globals, ExecutionBudget budget) {
         Scope scope = new Scope(null);
         globals.forEach(scope::define);
+        if (scope.get("sql") == null) scope.define("sql", new Sql());
         Interpreter interpreter = new Interpreter(defs, scope, budget);
         try {
             interpreter.exec(body, scope);
+        } catch (Halt stop) {
+            return "";
         } catch (WhyError e) {
             throw e.locate(file, e.line());
         }
-        return view.render(interpreter, scope, partials);
+        try {
+            return view.render(interpreter, scope, partials);
+        } catch (Halt stop) {
+            return "";
+        }
     }
 }

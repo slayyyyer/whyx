@@ -52,7 +52,7 @@ end
 
 # Password rows record their own cost, so the rounds can be raised later without breaking rows.
 def rounds()
-  120000
+  600000
 end
 
 def clean_handle(text)
@@ -73,6 +73,11 @@ end
 
 def login_ip_limit()
   20
+end
+
+# Sign-ups share the attempt log: five new accounts per address inside the sign-in window.
+def signup_limit()
+  5
 end
 
 def login_blocked(db, kind, key, limit)
@@ -99,41 +104,30 @@ def dummy_password_hash()
   hash
 end
 
-def password_matches(password, stored)
-  parts = str(stored).split("$")
-  ok = false
-  if parts.length == 4 and parts[0] == "pbkdf2-sha256"
-    ok = pbkdf2(password, parts[2], int(parts[1])) == parts[3]
-  end
-  ok
-end
-
 # One timeline row with its author and interaction counts. The viewer id is folded in,
 # so liked and reposted are 0 for a signed-out visitor.
-def post_columns(uid)
-  who = int(uid)
-  "p.id as id, p.user_id as user_id, p.parent_id as parent_id, p.body as body, p.created_at as created_at, cast(strftime('%s','now') - strftime('%s', p.created_at) as integer) as age, u.handle as handle, u.name as name, u.color as color, (select count(*) from posts r where r.parent_id = p.id) as replies, (select count(*) from likes l where l.post_id = p.id) as likes, (select count(*) from reposts rp where rp.post_id = p.id) as reposts, (select count(*) from likes l where l.post_id = p.id and l.user_id = #{who}) as liked, (select count(*) from reposts rp where rp.post_id = p.id and rp.user_id = #{who}) as reposted"
+def post_columns()
+  "p.id as id, p.user_id as user_id, p.parent_id as parent_id, p.body as body, p.created_at as created_at, cast(strftime('%s','now') - strftime('%s', p.created_at) as integer) as age, u.handle as handle, u.name as name, u.color as color, (select count(*) from posts r where r.parent_id = p.id) as replies, (select count(*) from likes l where l.post_id = p.id) as likes, (select count(*) from reposts rp where rp.post_id = p.id) as reposts, (select count(*) from likes l where l.post_id = p.id and l.user_id = :who) as liked, (select count(*) from reposts rp where rp.post_id = p.id and rp.user_id = :who) as reposted"
 end
 
 # Every post list starts from this join, so the column list and the author join live in one place.
-def posts_from(uid)
-  "select " + post_columns(uid) + " from posts p join users u on u.id = p.user_id"
+def posts_from()
+  "select " + post_columns() + " from posts p join users u on u.id = p.user_id"
 end
 
 # The home timeline: posts from the people a viewer follows, plus the posts those people reposted,
 # newest event first. A repost carries the reposter's name and handle so the card can credit them.
 def timeline(db, uid)
-  who = int(uid)
-  followed = "(select followee_id from follows where follower_id = #{who})"
-  events = "select p.id as id, null as reposted_handle, null as reposted_name, cast(strftime('%s', p.created_at) as integer) as on_at from posts p where p.parent_id is null and (p.user_id = #{who} or p.user_id in " + followed + ") union all select p.id as id, ru.handle as reposted_handle, ru.name as reposted_name, cast(strftime('%s', r.created_at) as integer) as on_at from reposts r join posts p on p.id = r.post_id join users ru on ru.id = r.user_id where p.parent_id is null and (r.user_id = #{who} or r.user_id in " + followed + ")"
+  followed = "(select followee_id from follows where follower_id = :who)"
+  events = "select p.id as id, null as reposted_handle, null as reposted_name, cast(strftime('%s', p.created_at) as integer) as on_at from posts p where p.parent_id is null and (p.user_id = :who or p.user_id in " + followed + ") union all select p.id as id, ru.handle as reposted_handle, ru.name as reposted_name, cast(strftime('%s', r.created_at) as integer) as on_at from reposts r join posts p on p.id = r.post_id join users ru on ru.id = r.user_id where p.parent_id is null and (r.user_id = :who or r.user_id in " + followed + ")"
   # One row per post: its newest event wins, and a repost wins a same-second tie so the share is
   # credited. Without this, a post from someone the viewer follows would appear again per repost.
   ranked = "select e.*, row_number() over (partition by e.id order by e.on_at desc, e.reposted_handle is null) as rn from (" + events + ") e"
-  db.query("select " + post_columns(uid) + ", t.reposted_handle as reposted_handle, t.reposted_name as reposted_name, t.on_at as on_at from (" + ranked + ") t join posts p on p.id = t.id join users u on u.id = p.user_id where t.rn = 1 order by t.on_at desc, p.id desc limit 40")
+  db.query("select " + post_columns() + ", t.reposted_handle as reposted_handle, t.reposted_name as reposted_name, t.on_at as on_at from (" + ranked + ") t join posts p on p.id = t.id join users u on u.id = p.user_id where t.rn = 1 order by t.on_at desc, p.id desc limit 40", who: uid)
 end
 
 def trending(db, uid)
-  db.query(posts_from(uid) + " where p.created_at > datetime('now', '-7 days') order by likes desc, p.id desc limit 3")
+  db.query(posts_from() + " where p.created_at > datetime('now', '-7 days') order by likes desc, p.id desc limit 3", who: uid)
 end
 
 def who_to_follow(db, uid)

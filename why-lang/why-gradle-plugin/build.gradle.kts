@@ -52,6 +52,7 @@ gradlePlugin {
             implementationClass = "why.gradle.WhyPlugin"
             displayName = "Why"
             description = "Packages src/why pages into the jar and adds whyCheck and whyRun tasks."
+            tags.set(listOf("why", "language", "web", "pages"))
         }
     }
 }
