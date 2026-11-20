@@ -110,26 +110,26 @@ class WhyAppTest {
 
     @Test
     void rejectsUnknownOptionsAndMissingValues() {
-        WhyApp.OptionException unknown = assertThrows(WhyApp.OptionException.class,
+        WhyApp.LaunchException unknown = assertThrows(WhyApp.LaunchException.class,
                 () -> parse("--bogus"));
         assertEquals("unknown option '--bogus'", unknown.getMessage());
 
-        WhyApp.OptionException host = assertThrows(WhyApp.OptionException.class,
+        WhyApp.LaunchException host = assertThrows(WhyApp.LaunchException.class,
                 () -> parse("--host"));
         assertEquals("option --host needs a value", host.getMessage());
 
-        WhyApp.OptionException port = assertThrows(WhyApp.OptionException.class,
+        WhyApp.LaunchException port = assertThrows(WhyApp.LaunchException.class,
                 () -> parse("-p"));
         assertEquals("option -p needs a value", port.getMessage());
     }
 
     @Test
     void rejectsInvalidEnvironmentValues() {
-        WhyApp.OptionException port = assertThrows(WhyApp.OptionException.class,
+        WhyApp.LaunchException port = assertThrows(WhyApp.LaunchException.class,
                 () -> parse(new String[0], Map.of("PORT", "abc")));
         assertEquals("port must be a number, got 'abc'", port.getMessage());
 
-        WhyApp.OptionException flag = assertThrows(WhyApp.OptionException.class,
+        WhyApp.LaunchException flag = assertThrows(WhyApp.LaunchException.class,
                 () -> parse(new String[0], Map.of("WHY_SECURE_COOKIES", "maybe")));
         assertEquals("WHY_SECURE_COOKIES must be true or false, got 'maybe'",
                 flag.getMessage());
@@ -161,12 +161,12 @@ class WhyAppTest {
         Output out = new Output();
         Output err = new Output();
 
-        int status = WhyApp.run(String.class, new String[0], NO_ENVIRONMENT::get,
+        int status = WhyApp.run(Unannotated.class, new String[0], NO_ENVIRONMENT::get,
                 out.stream, err.stream);
 
         assertEquals(1, status);
-        assertEquals(String.class.getName() + " is not annotated with @WhyApplication",
-                err.text().strip());
+        assertTrue(err.text().strip().endsWith(
+                Unannotated.class.getName() + " is not annotated with @WhyApplication"));
         assertEquals("", out.text());
     }
 
@@ -223,6 +223,8 @@ class WhyAppTest {
             return bytes.toString(StandardCharsets.UTF_8);
         }
     }
+
+    static final class Unannotated {}
 
     @WhyApplication
     static final class Annotated {}

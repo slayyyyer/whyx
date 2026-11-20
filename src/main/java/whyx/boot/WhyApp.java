@@ -3,10 +3,10 @@ package whyx.boot;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Locale;
-import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
@@ -34,6 +34,8 @@ import why.WhyServer;
  * }</pre>
  */
 public final class WhyApp {
+    private static final int FAILURE = 1;
+
     private WhyApp() {}
 
     /**
@@ -47,49 +49,33 @@ public final class WhyApp {
     static int run(Class<?> application, String[] args, Function<String, String> environment,
             PrintStream out, PrintStream err) {
         try {
-            Optional<Lifecycle> started = start(application, args, environment, out);
-            if (started.isEmpty()) return 0;
+            Options options = Options.parse(args, environment);
+            if (options.help()) {
+                usage(out);
+                return 0;
+            }
 
-            Lifecycle lifecycle = started.get();
+            Lifecycle lifecycle = start(application, options, out);
             Runtime.getRuntime().addShutdownHook(new Thread(lifecycle::stop, "why-shutdown"));
             lifecycle.await();
             return 0;
-        } catch (OptionException e) {
-            err.println(name(application) + ": " + e.getMessage());
-            return 1;
-        } catch (IllegalArgumentException e) {
-            err.println(e.getMessage());
-            return 1;
+        } catch (LaunchException e) {
+            return reportFailure(application, err, e.getMessage());
         } catch (IOException e) {
-            err.println(name(application) + ": cannot start server: " + e.getMessage());
-            return 1;
+            return reportFailure(application, err, "cannot start server: " + e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return 1;
+            return FAILURE;
         }
     }
 
     /**
-     * Opens the site in {@code application}'s class loader and starts the server, or returns empty
-     * after printing help. The caller owns the returned lifecycle and must stop it.
-     *
-     * <p>The annotated application class still supplies its launch configuration, such as
-     * {@link WhyApplication#seed()}; flags and environment supply the runtime settings.
+     * Opens the annotated application's site and starts the server. The caller owns the returned
+     * lifecycle and must stop it to release the port.
      */
-    public static Optional<Lifecycle> start(Class<?> application, String[] args)
+    static Lifecycle start(Class<?> application, Options options, PrintStream out)
             throws IOException {
-        return start(application, args, System::getenv, System.out);
-    }
-
-    static Optional<Lifecycle> start(Class<?> application, String[] args,
-            Function<String, String> environment, PrintStream out) throws IOException {
         WhyApplication configuration = configuration(application);
-        Options options = Options.parse(args, environment);
-        if (options.help()) {
-            usage(out);
-            return Optional.empty();
-        }
-
         Path db = options.db();
         // Site.fromClasspath creates the schema while opening the database, so decide whether it
         // is new first.
@@ -109,14 +95,14 @@ public final class WhyApp {
         out.println("Why is serving " + site.root() + " at http://" + shown + ":"
                 + server.port());
         out.println("press Ctrl+C to stop");
-        return Optional.of(new Lifecycle(server));
+        return new Lifecycle(server);
     }
 
     /** Reads the launch configuration declared by the annotated application class. */
     static WhyApplication configuration(Class<?> application) {
         WhyApplication configuration = application.getAnnotation(WhyApplication.class);
         if (configuration == null) {
-            throw new IllegalArgumentException(
+            throw new LaunchException(
                     application.getName() + " is not annotated with @WhyApplication");
         }
         return configuration;
@@ -126,6 +112,11 @@ public final class WhyApp {
     private static String name(Class<?> application) {
         String name = application.getPackageName();
         return name.isBlank() ? "why" : name;
+    }
+
+    private static int reportFailure(Class<?> application, PrintStream err, String message) {
+        err.println(name(application) + ": " + message);
+        return FAILURE;
     }
 
     /** Whether this run has to create the database. A null path is the temporary database. */
@@ -142,7 +133,7 @@ public final class WhyApp {
     }
 
     private static String value(String[] args, int index, String option) {
-        if (index >= args.length) throw new OptionException("option " + option + " needs a value");
+        if (index >= args.length) throw new LaunchException("option " + option + " needs a value");
         return args[index];
     }
 
@@ -150,7 +141,15 @@ public final class WhyApp {
         try {
             return Integer.parseInt(value.strip());
         } catch (NumberFormatException e) {
-            throw new OptionException("port must be a number, got '" + value + "'");
+            throw new LaunchException("port must be a number, got '" + value + "'");
+        }
+    }
+
+    private static Path databasePath(String value) {
+        try {
+            return Path.of(value);
+        } catch (InvalidPathException e) {
+            throw new LaunchException("invalid database path '" + value + "'");
         }
     }
 
@@ -166,7 +165,7 @@ public final class WhyApp {
         return switch (value.toLowerCase(Locale.ROOT)) {
             case "1", "true", "yes", "on" -> true;
             case "0", "false", "no", "off" -> false;
-            default -> throw new OptionException(
+            default -> throw new LaunchException(
                     name + " must be true or false, got '" + value + "'");
         };
     }
@@ -188,8 +187,8 @@ public final class WhyApp {
                 """);
     }
 
-    /** A running application. Stop it to drain requests and release the port. */
-    public static final class Lifecycle implements AutoCloseable {
+    /** A running application. {@link #stop()} drains requests and releases the port. */
+    static final class Lifecycle {
         private final WhyServer server;
         private final CountDownLatch stopped = new CountDownLatch(1);
         private final AtomicBoolean stopping = new AtomicBoolean();
@@ -198,18 +197,13 @@ public final class WhyApp {
             this.server = server;
         }
 
-        /** The port the server bound, which may differ from the requested port. */
-        public int port() {
-            return server.port();
-        }
-
         /** Blocks until the lifecycle is stopped. */
-        public void await() throws InterruptedException {
+        void await() throws InterruptedException {
             stopped.await();
         }
 
         /** Stops accepting requests, drains for up to five seconds and releases the port. */
-        public void stop() {
+        void stop() {
             if (!stopping.compareAndSet(false, true)) return;
             try {
                 server.stop(Duration.ofSeconds(5));
@@ -217,25 +211,16 @@ public final class WhyApp {
                 stopped.countDown();
             }
         }
-
-        @Override
-        public void close() {
-            stop();
-        }
     }
 
     /** Parsed flags and environment defaults. */
     record Options(String host, int port, Path db, boolean diagnostics, boolean secureCookies,
             boolean trustProxy, boolean help) {
-        static Options parse(String[] args) {
-            return parse(args, System::getenv);
-        }
-
         static Options parse(String[] args, Function<String, String> environment) {
             String host = env(environment, "HOST", "127.0.0.1");
             int port = parsePort(env(environment, "PORT", "8080"));
             String database = env(environment, "WHY_DB", null);
-            Path db = database == null ? null : Path.of(database);
+            Path db = database == null ? null : databasePath(database);
             boolean diagnostics = false;
             boolean secureCookies = envFlag(environment, "WHY_SECURE_COOKIES");
             boolean trustProxy = false;
@@ -245,7 +230,7 @@ public final class WhyApp {
                 switch (arg) {
                     case "--host" -> host = value(args, ++i, arg);
                     case "-p", "--port" -> port = parsePort(value(args, ++i, arg));
-                    case "--db" -> db = Path.of(value(args, ++i, arg));
+                    case "--db" -> db = databasePath(value(args, ++i, arg));
                     case "--dev" -> diagnostics = true;
                     case "--secure-cookies" -> secureCookies = true;
                     case "--trust-proxy" -> trustProxy = true;
@@ -253,16 +238,16 @@ public final class WhyApp {
                         return new Options(host, port, db, diagnostics, secureCookies,
                                 trustProxy, true);
                     }
-                    default -> throw new OptionException("unknown option '" + arg + "'");
+                    default -> throw new LaunchException("unknown option '" + arg + "'");
                 }
             }
             return new Options(host, port, db, diagnostics, secureCookies, trustProxy, false);
         }
     }
 
-    /** A problem with the command line or environment, reported as one line before exit. */
-    public static final class OptionException extends RuntimeException {
-        public OptionException(String message) {
+    /** A problem with the application class, command line or environment. */
+    static final class LaunchException extends RuntimeException {
+        LaunchException(String message) {
             super(message);
         }
     }
