@@ -1,9 +1,0 @@
-target/
-build/
-.gradle/
-.tools/
-*.db
-*.db-journal
-.idea/
-*.iml
-docs/api/
