@@ -113,16 +113,6 @@ public final class WhyApp {
         return value == null || value.isBlank() ? fallback : value.strip();
     }
 
-    private static Path envPath(Function<String, String> environment, String name) {
-        String value = env(environment, name, null);
-        return value == null ? null : Path.of(value);
-    }
-
-    private static int envPort(Function<String, String> environment, int fallback) {
-        String value = env(environment, "PORT", null);
-        return value == null ? fallback : parsePort(value);
-    }
-
     private static boolean envFlag(Function<String, String> environment, String name) {
         String value = env(environment, name, null);
         if (value == null) return false;
@@ -165,8 +155,9 @@ public final class WhyApp {
 
         static Options parse(String[] args, Function<String, String> environment) {
             String host = env(environment, "HOST", "127.0.0.1");
-            int port = envPort(environment, 8080);
-            Path db = envPath(environment, "WHY_DB");
+            int port = parsePort(env(environment, "PORT", "8080"));
+            String database = env(environment, "WHY_DB", null);
+            Path db = database == null ? null : Path.of(database);
             boolean diagnostics = false;
             boolean secureCookies = envFlag(environment, "WHY_SECURE_COOKIES");
             boolean trustProxy = false;

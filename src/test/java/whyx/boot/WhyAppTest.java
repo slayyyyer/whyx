@@ -130,13 +130,9 @@ class WhyAppTest {
     }
 
     @Test
-    void treatsMissingAndTemporaryDatabasesAsFresh(@TempDir Path dir) {
+    void knowsWhenTheDatabaseIsNew(@TempDir Path dir) throws IOException {
         assertTrue(WhyApp.isFresh(null), "the temporary database is new every run");
         assertTrue(WhyApp.isFresh(dir.resolve("missing.db")));
-    }
-
-    @Test
-    void treatsAnExistingDatabaseAsNotFresh(@TempDir Path dir) throws IOException {
         assertFalse(WhyApp.isFresh(Files.createFile(dir.resolve("data.db"))));
     }
 
@@ -147,19 +143,11 @@ class WhyAppTest {
         Path db = dir.resolve("data.db");
         Site site = new Site(root, db);
 
-        boolean fresh = WhyApp.isFresh(db);
-        assertTrue(fresh);
-        assertTrue(WhyApp.applySeed(true, site, fresh),
-                "an enabled fresh database should be seeded");
-        assertTrue(Files.exists(db), "seeding should create the database");
-        assertFalse(WhyApp.isFresh(db));
-        assertFalse(WhyApp.applySeed(true, site, WhyApp.isFresh(db)),
-                "an existing database should not be seeded");
-        Path disabledDb = dir.resolve("disabled.db");
-        Site disabledSite = new Site(root, disabledDb);
-        assertTrue(WhyApp.isFresh(disabledDb));
-        assertFalse(WhyApp.applySeed(false, disabledSite, WhyApp.isFresh(disabledDb)),
-                "seeding disabled should skip a fresh database");
+        assertTrue(WhyApp.applySeed(true, site, true), "an enabled fresh database is seeded");
+        assertTrue(Files.exists(db), "seeding creates the database");
+        assertFalse(WhyApp.applySeed(true, site, false), "an existing database is not seeded");
+        assertFalse(WhyApp.applySeed(false, new Site(root, dir.resolve("disabled.db")), true),
+                "a disabled seed skips a fresh database");
     }
 
     private static WhyApp.Options parse(String... args) {
