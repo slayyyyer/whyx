@@ -1,0 +1,25 @@
+imports:
+_acts
+_delete
+
+view:
+{{#if it.reposted_handle}}
+<p class="reshared">
+  <svg viewBox="0 0 24 24" width="15" height="15"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+  <a href="/profile?handle={{it.reposted_handle}}">{{it.reposted_name}}</a> reposted
+</p>
+{{/if}}
+<article class="post">
+  <a class="avatar" href="/profile?handle={{it.handle}}" style="background:{{it.color}}">{{initials(it.name)}}</a>
+  <div class="post-main">
+    <div class="post-head">
+      <a class="name" href="/profile?handle={{it.handle}}">{{it.name}}</a>
+      <span class="handle">@{{it.handle}}</span>
+      <span class="dot">·</span>
+      <a class="time" href="/post?id={{it.id}}">{{ago(it.age)}}</a>
+      {{#if me and it.user_id == me.id}}{{> _delete}}{{/if}}
+    </div>
+    <a class="post-text" href="/post?id={{it.id}}">{{it.body}}</a>
+    <div class="post-actions">{{> _acts}}</div>
+  </div>
+</article>

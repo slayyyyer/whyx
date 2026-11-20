@@ -1,0 +1,86 @@
+imports:
+_app
+_head
+_tail
+_card
+
+controller:
+me = current_user(db, session)
+uid = viewer_id(me)
+handle = clean_handle(params.handle)
+title = "Profile / whyx"
+tab = str(params.tab)
+if tab.length == 0
+  tab = "posts"
+end
+back = "/profile?handle=" + handle
+is_me = false
+follows_them = nil
+list = []
+user = db.get("select u.id as id, u.handle as handle, u.name as name, u.bio as bio, u.location as location, u.color as color, substr(u.created_at, 1, 7) as joined, (select count(*) from follows f where f.followee_id = u.id) as followers, (select count(*) from follows f where f.follower_id = u.id) as following, (select count(*) from posts p where p.user_id = u.id) as posts from users u where u.handle = ?", handle)
+if user
+  title = user.name + " (@" + user.handle + ") / whyx"
+  is_me = me != nil and me.id == user.id
+  follows_them = db.get("select 1 as ok from follows where follower_id = ? and followee_id = ?", uid, user.id)
+  if tab == "replies"
+    list = db.query(posts_from(uid) + " where p.user_id = ? and p.parent_id is not null order by p.id desc limit 40", user.id)
+  elsif tab == "likes"
+    list = db.query(posts_from(uid) + " join likes w on w.post_id = p.id where w.user_id = ? order by w.created_at desc, p.id desc limit 40", user.id)
+  else
+    list = db.query(posts_from(uid) + " where p.user_id = ? and p.parent_id is null order by p.id desc limit 40", user.id)
+  end
+end
+
+view:
+{{> _head}}
+<div class="page">
+  <section class="column">
+    {{#if user}}
+    <div class="topbar">
+      <a class="back" href="/">&#8592;</a>
+      <div class="topbar-text">
+        <h1>{{user.name}}</h1>
+        <span class="topbar-meta">{{user.posts}} posts</span>
+      </div>
+    </div>
+    <div class="profile-banner" style="background:linear-gradient(135deg, {{user.color}}, #16181c)"></div>
+    <div class="profile-head">
+      <div class="profile-actions">
+        {{#if is_me}}
+        <span class="btn ghost">This is you</span>
+        {{else}}
+        {{#if me}}
+        <form method="post" action="/act">
+          <input type="hidden" name="_token" value="{{csrf.token}}">
+          <input type="hidden" name="action" value="follow">
+          <input type="hidden" name="target_id" value="{{user.id}}">
+          <input type="hidden" name="back" value="{{back}}">
+          <button class="btn{{#if follows_them}} outline{{else}} primary{{/if}}" type="submit">{{#if follows_them}}Following{{else}}Follow{{/if}}</button>
+        </form>
+        {{else}}
+        <a class="btn primary" href="/login">Follow</a>
+        {{/if}}
+        {{/if}}
+      </div>
+      <span class="avatar xl" style="background:{{user.color}}">{{initials(user.name)}}</span>
+      <h1>{{user.name}}</h1>
+      <p class="handle">@{{user.handle}}</p>
+      {{#if user.bio}}<p class="bio">{{user.bio}}</p>{{/if}}
+      <p class="meta-line">{{#if user.location}}{{user.location}} · {{/if}}Joined {{user.joined}}</p>
+      <p class="counts"><strong>{{user.following}}</strong> Following <strong>{{user.followers}}</strong> Followers</p>
+    </div>
+    <nav class="tabs">
+      <a class="tab{{#if tab == 'posts'}} on{{/if}}" href="/profile?handle={{user.handle}}">Posts</a>
+      <a class="tab{{#if tab == 'replies'}} on{{/if}}" href="/profile?handle={{user.handle}}&amp;tab=replies">Replies</a>
+      <a class="tab{{#if tab == 'likes'}} on{{/if}}" href="/profile?handle={{user.handle}}&amp;tab=likes">Likes</a>
+    </nav>
+    <div class="feed">
+      {{#each list}}{{> _card}}{{else}}<p class="empty">Nothing here yet.</p>{{/each}}
+    </div>
+    {{else}}
+    <div class="topbar"><a class="back" href="/">&#8592;</a><h1>Profile</h1></div>
+    <p class="empty">No account uses that handle. <a href="/explore">Find people</a></p>
+    {{/if}}
+  </section>
+</div>
+{{> _tail}}

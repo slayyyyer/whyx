@@ -1,0 +1,77 @@
+imports:
+_app
+_head
+_tail
+_card
+_acts
+_delete
+
+controller:
+me = current_user(db, session)
+uid = viewer_id(me)
+id = int(params.id)
+back = "/post?id=" + str(id)
+title = "Post / whyx"
+parent_list = []
+replies = []
+post = db.get(posts_from(uid) + " where p.id = ?", id)
+if post
+  title = post.name + " (@" + post.handle + ") / whyx"
+  if post.parent_id
+    parent = db.get(posts_from(uid) + " where p.id = ?", post.parent_id)
+    if parent
+      parent_list.push(parent)
+    end
+  end
+  replies = db.query(posts_from(uid) + " where p.parent_id = ? order by p.id asc limit 100", id)
+end
+# _acts and _delete render the post bound to 'it', so the thread's own post is bound here.
+it = post
+
+view:
+{{> _head}}
+<div class="page">
+  <section class="column">
+    <div class="topbar"><a class="back" href="/">&#8592;</a><h1>Thread</h1></div>
+    {{#if post}}
+    {{#each parent_list}}<div class="thread-up">{{> _card}}</div>{{/each}}
+    <article class="focal">
+      <div class="focal-head">
+        <a class="avatar" href="/profile?handle={{post.handle}}" style="background:{{post.color}}">{{initials(post.name)}}</a>
+        <div class="focal-who">
+          <a class="name" href="/profile?handle={{post.handle}}">{{post.name}}</a>
+          <span class="handle">@{{post.handle}}</span>
+        </div>
+        {{#if me and post.user_id == me.id}}{{> _delete}}{{/if}}
+      </div>
+      <p class="focal-text">{{post.body}}</p>
+      <p class="focal-time">{{post.created_at}} · {{post.likes}} likes · {{post.reposts}} reposts · {{post.replies}} replies</p>
+      <div class="post-actions">{{> _acts}}</div>
+    </article>
+    {{#if me}}
+    <form class="compose" method="post" action="/act">
+      <input type="hidden" name="_token" value="{{csrf.token}}">
+      <input type="hidden" name="action" value="post">
+      <input type="hidden" name="parent_id" value="{{post.id}}">
+      <input type="hidden" name="back" value="{{back}}">
+      <span class="avatar" style="background:{{me.color}}">{{initials(me.name)}}</span>
+      <div class="compose-main">
+        <textarea name="body" rows="2" maxlength="280" placeholder="Post your reply" required></textarea>
+        <div class="compose-foot">
+          <span class="hint">280 characters</span>
+          <button class="btn primary" type="submit">Reply</button>
+        </div>
+      </div>
+    </form>
+    {{else}}
+    <p class="signin-note"><a href="/login">Sign in</a> to reply, repost or like.</p>
+    {{/if}}
+    <div class="feed">
+      {{#each replies}}{{> _card}}{{else}}<p class="empty">No replies yet. Start the thread.</p>{{/each}}
+    </div>
+    {{else}}
+    <p class="empty">That post is gone, or it never existed. <a href="/">Back to the timeline</a></p>
+    {{/if}}
+  </section>
+</div>
+{{> _tail}}

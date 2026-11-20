@@ -1,0 +1,6 @@
+# The build context is the whole workspace; the image needs only why-lang sources and app pages.
+.tools/
+.freebuff/
+**/.git/
+why-lang/target/
+app/data.db*

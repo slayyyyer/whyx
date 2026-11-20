@@ -1,0 +1,73 @@
+imports:
+_app
+
+controller:
+me = current_user(db, session)
+if me == nil
+  redirect("/login")
+end
+uid = me.id
+action = str(form.action)
+back = str(form.back)
+if back.start_with?("//") or back.start_with?("/") == false
+  back = "/"
+end
+
+if action == "post"
+  body = str(form.body).strip
+  if body.length == 0
+    flash.set("error", "Write something first.")
+  elsif body.length > 280
+    flash.set("error", "A post is limited to 280 characters.")
+  else
+    parent = str(form.parent_id)
+    if parent.length > 0
+      db.exec("insert into posts (user_id, parent_id, body) values (?, ?, ?)", uid, int(parent), body)
+    else
+      db.exec("insert into posts (user_id, body) values (?, ?)", uid, body)
+    end
+    flash.set("notice", "Posted.")
+  end
+elsif action == "like" or action == "repost"
+  # The two toggles differ only in their table, which is one of these two fixed literals.
+  table = "likes"
+  if action == "repost"
+    table = "reposts"
+  end
+  post_id = int(form.post_id)
+  if db.get("select id from posts where id = ?", post_id)
+    if db.get("select 1 as ok from " + table + " where user_id = ? and post_id = ?", uid, post_id)
+      db.exec("delete from " + table + " where user_id = ? and post_id = ?", uid, post_id)
+    else
+      db.exec("insert into " + table + " (user_id, post_id) values (?, ?)", uid, post_id)
+    end
+  end
+elsif action == "follow"
+  target = int(form.target_id)
+  if target > 0 and target != uid and db.get("select id from users where id = ?", target)
+    if db.get("select 1 as ok from follows where follower_id = ? and followee_id = ?", uid, target)
+      db.exec("delete from follows where follower_id = ? and followee_id = ?", uid, target)
+      flash.set("notice", "Unfollowed.")
+    else
+      db.exec("insert into follows (follower_id, followee_id) values (?, ?)", uid, target)
+      flash.set("notice", "Following. Their posts are in your home timeline.")
+    end
+  end
+elsif action == "delete"
+  post_id = int(form.post_id)
+  if db.get("select id from posts where id = ? and user_id = ?", post_id, uid)
+    db.exec("delete from likes where post_id = ?", post_id)
+    db.exec("delete from reposts where post_id = ?", post_id)
+    db.exec("delete from posts where parent_id = ?", post_id)
+    db.exec("delete from posts where id = ?", post_id)
+    # The page being returned to was the deleted post, so go home instead of a 404.
+    if back == "/post?id=" + str(post_id)
+      back = "/"
+    end
+    flash.set("notice", "Post deleted.")
+  end
+end
+redirect(back)
+
+view:
+<p>Working…</p>

@@ -1,0 +1,9 @@
+# Local toolchain, agent state, build output and the generated demo database.
+.tools/
+.freebuff/
+why-lang/target/
+app/data.db*
+*.log
+
+# The vendored runtime's clone metadata, kept locally so why-lang can still be diffed upstream.
+why-lang/.git-upstream/

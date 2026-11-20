@@ -1,0 +1,42 @@
+view:
+<aside class="rail">
+  <form class="search" method="get" action="/explore">
+    <input type="search" name="q" placeholder="Search whyx" aria-label="Search whyx">
+  </form>
+  <div class="card">
+    <h2>What's happening</h2>
+    {{#each popular}}
+    <a class="trend" href="/post?id={{it.id}}">
+      <span class="trend-meta">{{it.handle}} · {{ago(it.age)}}</span>
+      <span class="trend-text">{{it.body}}</span>
+      <span class="trend-meta">{{it.likes}} likes · {{it.reposts}} reposts</span>
+    </a>
+    {{else}}
+    <p class="empty">Nothing trending yet.</p>
+    {{/each}}
+  </div>
+  <div class="card">
+    <h2>Who to follow</h2>
+    {{#each suggestions}}
+    <div class="who">
+      <a class="avatar small" href="/profile?handle={{it.handle}}" style="background:{{it.color}}">{{initials(it.name)}}</a>
+      <div class="who-text">
+        <a class="name" href="/profile?handle={{it.handle}}">{{it.name}}</a>
+        <span class="handle">@{{it.handle}}</span>
+      </div>
+      {{#if me}}
+      <form method="post" action="/act">
+        <input type="hidden" name="_token" value="{{csrf.token}}">
+        <input type="hidden" name="action" value="follow">
+        <input type="hidden" name="target_id" value="{{it.id}}">
+        <input type="hidden" name="back" value="{{back}}">
+        <button class="btn small" type="submit">Follow</button>
+      </form>
+      {{/if}}
+    </div>
+    {{else}}
+    <p class="empty">You follow everyone already.</p>
+    {{/each}}
+    <a class="more" href="/explore">Show more</a>
+  </div>
+</aside>

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The idea behind Why — the page model experiment</title>
+<meta name="description" content="Why is an experiment in MVC at the scale of a single page: imports, a controller, and a view in one file, a URL that is the filename, and a JVM jar to run it.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="Why home"><span class="mark">W</span><span>why</span></a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="usage.html">Using</a>
+      <a href="why.html" aria-current="page">The idea</a>
+      <a href="install.html">Install</a>
+      <a href="recipes.html">Recipes</a>
+      <a class="gh" href="https://github.com/slayyyyer/why-lang">GitHub <span aria-hidden="true">↗</span></a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap docs">
+    <div class="docs-grid">
+      <nav class="toc" aria-label="On this page">
+        <p class="toc-title">On this page</p>
+        <a href="#idea">The idea</a>
+        <a href="#bet">The bet</a>
+        <a href="#ruby">Ruby's shape</a>
+        <a href="#jvm">The JVM</a>
+        <a href="#learned">What I learned</a>
+        <a href="#not">What it is not</a>
+      </nav>
+
+      <article>
+        <p class="eyebrow">The idea</p>
+        <h1>Because writing a page should mean writing a page.</h1>
+        <p class="lead">I wanted MVC at the scale of a single page: the URL is the filename, the controller and view are separate sections, and data access is built in. The feel of Ruby and the boring portability of the JVM are how it stays small. Why is the experiment that asks how small a page language can stay.</p>
+
+        <h2 id="idea">The idea</h2>
+        <p>Most web frameworks need scaffolding before the first page exists: a project layout, a router, a template engine, and a set of conventions. I wanted to see what MVC looks like when the unit is the page itself.</p>
+        <p>Why puts the page's pieces in one file: <code>imports:</code> for shared pieces, <code>controller:</code> for the logic, and <code>view:</code> for the output. SQLite access is built in, so there is no separate model layer to set up. The URL is the filename, so there's no route table. The server parses it on request, so there's no build step. The experiment is how small a language can be and still keep logic and markup cleanly apart.</p>
+
+        <h2 id="bet">The bet: the page is the unit</h2>
+        <p>If the page is the unit, the language can be tiny. A page needs a place to list shared files, a place to do the work, and a place to render. That is <code>imports:</code>, <code>controller:</code>, <code>view:</code> — three sections in one file.</p>
+        <p>MVC here is deliberately small. The controller and view are separate sections; data access is <code>db.query</code>, <code>db.get</code>, and <code>db.exec</code>, plus any shared <code>def</code>s you import. There is no full model layer to set up.</p>
+        <p>Everything follows from that. No router, because the path is the filename. No build step, because the server parses on request. No component system, because an import is a partial and a partial is another file. A shared header stays a file you can open and edit, not a package you have to upgrade.</p>
+        <p>The experiment was to keep pushing on that constraint: how much can a page do before it needs a framework?</p>
+        <p>The file-per-URL model will look familiar to anyone who has used PHP or ERB-style tools. The difference is that the separation is enforced by the file format: logic and markup live in different sections, so a page can't turn into tag soup.</p>
+
+        <h2 id="ruby">Ruby's shape, not Ruby</h2>
+        <p>Ruby gets a lot right for this kind of code. Blocks make list work read like a sentence. <code>def</code> is enough structure for the small functions a page needs. Truthiness is simple: only <code>nil</code> and <code>false</code> are false. String interpolation is pleasant. None of that requires the whole object model.</p>
+        <p>So Why borrows the shape and leaves the rest out. No classes, no modules, no exceptions, no package manager, no metaprogramming. A page can define functions and pass blocks; it cannot grow a framework inside itself.</p>
+
+        <blockquote class="pullquote">The interesting part is not the interpreter. It is how much a page can do before it needs a framework.</blockquote>
+
+        <h2 id="jvm">The JVM as a boring host</h2>
+        <p>The runtime should be the least interesting part of a page tool. The JVM is installed in a lot of places, virtual threads make a simple request-per-thread server cheap, and a shaded SQLite driver means the whole thing can be one jar. No native extension, no language runtime to install, no separate database service for a small site.</p>
+        <p>That is the entire deployment story: a jar and a folder. If you can run Java, you can run the site.</p>
+
+        <h2 id="learned">What I learned</h2>
+        <p>The page model held up better than I expected. One file can read and write. A form, a bound SQL insert, a redirect, and a one-shot notice fit naturally in a page. Header and footer partials keep the view small. The demo guestbook is about forty lines including its HTML.</p>
+        <p>The edges were more interesting than the happy path. There is no response object, so <code>redirect</code> became a thrown signal. Query parameters already owned <code>params</code>, so forms needed a second global. Validation has nowhere to live. A flash needs state the page model did not have. A schema change has no migration story. Those edges are written down in the <a href="https://github.com/slayyyyer/why-lang/blob/main/FRICTION.md">friction log</a> rather than smoothed over.</p>
+        <p>The other surprise was diagnostics. A language that parses a page on every request can afford to be precise: <code>file:line</code>, the source line and a caret, the partial or import chain, a spelling hint. <code>why check</code> turns the same work into a pre-flight check. Error messages are part of the page model, not an afterthought.</p>
+
+        <h2 id="not">What it is not</h2>
+        <p>It is a proof of concept, not a production runtime. There is no sandbox — pages can run arbitrary SQL and read the database. There is no authentication, TLS, connection pooling, migration runner, or package manager. The flash store is a bounded, expiring in-memory store. The interpreter is a tree-walker and makes no performance promises.</p>
+        <p>Those are deliberate non-goals for now. The point was to build the smallest honest version of the page model and find out where it gets awkward. The <a href="https://github.com/slayyyyer/why-lang/blob/main/NOTES.md">notes</a> record the decisions and the things left out; the <a href="https://github.com/slayyyyer/why-lang/blob/main/FRICTION.md">friction log</a> records what the model made hard.</p>
+
+        <hr>
+        <p>If that sounds useful, <a href="install.html">install it</a> and try the <a href="recipes.html">recipes</a>. If it sounds like a bad idea, the friction log is the honest counterargument.</p>
+      </article>
+    </div>
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <a class="foot-brand" href="index.html"><span class="mark">W</span> Why — a page language for the JVM.</a>
+    <span class="foot-links">
+      <a href="https://github.com/slayyyyer/why-lang">GitHub</a>
+      <a href="https://github.com/slayyyyer/why-lang/blob/main/NOTES.md">Notes</a>
+    </span>
+    <p class="tribute">Named in tribute to <em>why the lucky stiff</em>, whose tiny, whimsical tools (Camping, Shoes, <em>Why's (Poignant) Guide to Ruby</em>) made programming feel like play.</p>
+  </div>
+</footer>
+
+<script src="site.js" defer></script>
+</body>
+</html>

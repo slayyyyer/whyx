@@ -1,0 +1,7 @@
+controller:
+session.clear()
+flash.set("notice", "You are signed out.")
+redirect("/login")
+
+view:
+<p>Signing out…</p>

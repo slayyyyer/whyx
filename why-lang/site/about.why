@@ -1,0 +1,25 @@
+imports:
+header
+footer
+
+controller:
+title = "About"
+def shout(text)
+  text.upcase + "!"
+end
+languages = ["ruby", "php", "handlebars"]
+
+view:
+{{> header}}
+<h1>{{shout("why not?")}}</h1>
+<p>Why is a proof of concept: a page file <em>is</em> a page. No routing layer, no build step,
+no framework boilerplate. Drop a file in the site folder and hit its URL.</p>
+<h2>Borrowed from</h2>
+<ul>
+{{#each languages}}
+  <li>{{it}}</li>
+{{/each}}
+</ul>
+<p>Controllers are Ruby-flavored. Views are Handlebars-flavored. The server is the JDK's own
+<code>HttpServer</code> on virtual threads.</p>
+{{> footer}}

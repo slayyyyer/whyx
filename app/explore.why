@@ -1,0 +1,74 @@
+imports:
+_app
+_head
+_tail
+_card
+_rail
+
+controller:
+me = current_user(db, session)
+uid = viewer_id(me)
+q = str(params.q).strip
+back = "/explore"
+title = "Explore / whyx"
+if q.length > 0
+  title = q + " / whyx"
+end
+posts = []
+people = []
+if q.length > 0
+  posts = db.query(posts_from(uid) + " where p.body like ? order by p.id desc limit 40", "%" + q + "%")
+  people = db.query("select u.id as id, u.handle as handle, u.name as name, u.bio as bio, u.color as color, (select count(*) from follows f where f.followee_id = u.id) as followers from users u where u.handle like ? or u.name like ? order by followers desc limit 10", "%" + q + "%", "%" + q + "%")
+else
+  posts = db.query(posts_from(uid) + " where p.created_at > datetime('now', '-7 days') order by likes desc, p.id desc limit 20")
+end
+popular = trending(db, uid)
+suggestions = who_to_follow(db, uid)
+
+view:
+{{> _head}}
+<div class="page">
+  <section class="column">
+    <div class="topbar"><h1>Explore</h1></div>
+    <form class="explore-search" method="get" action="/explore">
+      <input type="search" name="q" value="{{q}}" placeholder="Search posts and people" aria-label="Search posts and people" autofocus>
+    </form>
+    {{#if q}}
+    {{#if people.length > 0}}
+    <h2 class="section-title">People</h2>
+    <div class="people">
+      {{#each people}}
+      <div class="person">
+        <a class="avatar" href="/profile?handle={{it.handle}}" style="background:{{it.color}}">{{initials(it.name)}}</a>
+        <div class="who-text">
+          <a class="name" href="/profile?handle={{it.handle}}">{{it.name}}</a>
+          <span class="handle">@{{it.handle}} · {{it.followers}} followers</span>
+          {{#if it.bio}}<p class="bio">{{it.bio}}</p>{{/if}}
+        </div>
+        {{#if me}}
+        <form method="post" action="/act">
+          <input type="hidden" name="_token" value="{{csrf.token}}">
+          <input type="hidden" name="action" value="follow">
+          <input type="hidden" name="target_id" value="{{it.id}}">
+          <input type="hidden" name="back" value="{{back}}">
+          <button class="btn small" type="submit">Follow</button>
+        </form>
+        {{/if}}
+      </div>
+      {{/each}}
+    </div>
+    {{/if}}
+    <h2 class="section-title">Posts with "{{q}}"</h2>
+    <div class="feed">
+      {{#each posts}}{{> _card}}{{else}}<p class="empty">No posts match that search.</p>{{/each}}
+    </div>
+    {{else}}
+    <h2 class="section-title">Popular this week</h2>
+    <div class="feed">
+      {{#each posts}}{{> _card}}{{else}}<p class="empty">Nothing has been posted this week yet.</p>{{/each}}
+    </div>
+    {{/if}}
+  </section>
+  {{> _rail}}
+</div>
+{{> _tail}}

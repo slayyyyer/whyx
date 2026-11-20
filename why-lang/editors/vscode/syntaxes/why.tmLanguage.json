@@ -1,0 +1,109 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Why",
+  "scopeName": "source.why",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#section" },
+    { "include": "#mustache" },
+    { "include": "#definition" },
+    { "include": "#string" },
+    { "include": "#keyword" },
+    { "include": "#number" },
+    { "include": "#globals" },
+    { "include": "#predicate" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.why"
+    },
+    "section": {
+      "match": "^(imports|controller|view)(:)\\s*$",
+      "captures": {
+        "1": { "name": "keyword.control.section.why" },
+        "2": { "name": "punctuation.separator.key-value.why" }
+      }
+    },
+    "mustache": {
+      "patterns": [
+        {
+          "match": "\\{\\{!.*?\\}\\}",
+          "name": "comment.block.mustache.why"
+        },
+        {
+          "begin": "\\{\\{\\{?",
+          "end": "\\}\\}\\}?",
+          "name": "meta.embedded.expression.why",
+          "patterns": [
+            { "include": "#string" },
+            { "include": "#number" },
+            {
+              "match": "\\b(if|unless|each|else|with)\\b",
+              "name": "keyword.control.mustache.why"
+            },
+            {
+              "match": "@[A-Za-z_][A-Za-z0-9_]*",
+              "name": "variable.language.block.why"
+            },
+            {
+              "match": "\\b[A-Za-z_][A-Za-z0-9_]*[?!]?",
+              "name": "variable.other.why"
+            }
+          ]
+        }
+      ]
+    },
+    "definition": {
+      "match": "^\\s*(def)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.control.def.why" },
+        "2": { "name": "entity.name.function.why" }
+      }
+    },
+    "string": {
+      "patterns": [
+        {
+          "begin": "\"",
+          "end": "\"",
+          "name": "string.quoted.double.why",
+          "patterns": [
+            {
+              "match": "#\\{[^}]*\\}",
+              "name": "meta.embedded.expression.why"
+            },
+            {
+              "match": "\\\\.",
+              "name": "constant.character.escape.why"
+            }
+          ]
+        },
+        {
+          "begin": "'",
+          "end": "'",
+          "name": "string.quoted.single.why"
+        }
+      ]
+    },
+    "keyword": {
+      "patterns": [
+        {
+          "match": "\\b(if|elsif|else|end|unless|while|break|next|def|do|and|or|not|true|false|nil)\\b",
+          "name": "keyword.control.why"
+        }
+      ]
+    },
+    "number": {
+      "match": "\\b\\d+(?:\\.\\d+)?\\b",
+      "name": "constant.numeric.why"
+    },
+    "globals": {
+      "match": "\\b(db|flash|csrf|response|request|params|form|it)\\b",
+      "name": "support.variable.why"
+    },
+    "predicate": {
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*[?!]\\b",
+      "name": "entity.name.function.why"
+    }
+  }
+}

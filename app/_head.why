@@ -1,0 +1,42 @@
+view:
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{title}}</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <a class="logo" href="/" title="whyx home">
+      <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M23 4.9c-.8.4-1.7.7-2.6.8a4.5 4.5 0 0 0 2-2.5c-.9.5-1.9.9-3 1.1a4.5 4.5 0 0 0-7.7 4.1A12.8 12.8 0 0 1 2.4 3.6a4.5 4.5 0 0 0 1.4 6 4.4 4.4 0 0 1-2-.6v.1a4.5 4.5 0 0 0 3.6 4.4 4.5 4.5 0 0 1-2 .1 4.5 4.5 0 0 0 4.2 3.1A9 9 0 0 1 1 18.7a12.7 12.7 0 0 0 6.9 2c8.3 0 12.8-6.9 12.8-12.8v-.6c.9-.6 1.6-1.4 2.3-2.4z"/></svg>
+    </a>
+    <nav class="nav">
+      <a class="nav-item" href="/">Home</a>
+      <a class="nav-item" href="/explore">Explore</a>
+      {{#if me}}
+      <a class="nav-item" href="/profile?handle={{me.handle}}">Profile</a>
+      {{else}}
+      <a class="nav-item" href="/login">Sign in</a>
+      {{/if}}
+    </nav>
+    {{#if me}}
+    <a class="post-btn" href="/#compose">Post</a>
+    <div class="side-me">
+      <span class="avatar" style="background:{{me.color}}">{{initials(me.name)}}</span>
+      <div class="side-me-text">
+        <strong>{{me.name}}</strong>
+        <span>@{{me.handle}}</span>
+      </div>
+      <form method="post" action="/logout">
+        <input type="hidden" name="_token" value="{{csrf.token}}">
+        <button class="signout" type="submit">Sign out</button>
+      </form>
+    </div>
+    {{else}}
+    <a class="post-btn" href="/signup">Join</a>
+    {{/if}}
+  </aside>
+  <main class="main">

@@ -1,0 +1,26 @@
+imports:
+header
+footer
+
+controller:
+id = int(params.id)
+post = db.get("select * from posts where id = ?", id)
+title = "Not found"
+if post
+  title = post.title
+end
+
+view:
+{{> header}}
+{{#if post}}
+<article>
+  <h1>{{post.title}}</h1>
+  <p class="meta">{{post.author}} · {{post.created_at}}</p>
+  <p>{{post.body}}</p>
+</article>
+{{else}}
+<h1>Not found</h1>
+<p>No post with that id. <a href="/">Back to the posts</a>.</p>
+{{/if}}
+<p><a href="/">← all posts</a></p>
+{{> footer}}

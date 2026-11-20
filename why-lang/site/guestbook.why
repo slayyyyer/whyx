@@ -1,0 +1,50 @@
+imports:
+header
+footer
+
+controller:
+name = form.name
+message = form.message
+errors = {name: "", message: ""}
+if request.method == "POST"
+  errors = validate(form, {name: "required", message: "required"})
+  if errors.length == 0
+    db.exec("insert into guestbook (name, message, created_at) values (?, ?, datetime('now'))", name.strip, message.strip)
+    flash.set("notice", "Thanks — your note is in the book.")
+    redirect("/guestbook")
+  end
+end
+
+entries = db.query("select * from guestbook order by id desc limit 50")
+count = entries.length
+title = "Guestbook"
+
+view:
+{{> header}}
+<h1>Guestbook</h1>
+{{#if flash.notice}}<p class="note">{{flash.notice}}</p>{{/if}}
+<form class="sign" method="post" action="/guestbook">
+  <input type="hidden" name="_token" value="{{csrf.token}}">
+  <label>Name
+    <input name="name" maxlength="60" value="{{name}}">
+  </label>
+  {{#if errors.name}}<p class="error">{{errors.name}}</p>{{/if}}
+  <label>Message
+    <textarea name="message" rows="3" maxlength="500">{{message}}</textarea>
+  </label>
+  {{#if errors.message}}<p class="error">{{errors.message}}</p>{{/if}}
+  <button type="submit">Sign the guestbook</button>
+</form>
+{{#if count > 0}}
+<ul class="guestbook">
+{{#each entries}}
+  <li>
+    <p class="meta"><strong>{{it.name}}</strong> · {{it.created_at}}</p>
+    <p>{{it.message}}</p>
+  </li>
+{{/each}}
+</ul>
+{{else}}
+<p>No entries yet. Be the first.</p>
+{{/if}}
+{{> footer}}

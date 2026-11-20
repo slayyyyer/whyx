@@ -1,0 +1,7 @@
+.git
+.gradle
+.tools
+build
+target
+site/data.db
+site/data.db-*

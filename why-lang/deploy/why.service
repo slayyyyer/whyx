@@ -1,0 +1,27 @@
+[Unit]
+Description=Why site
+Documentation=https://github.com/slayyyyer/why-lang
+After=network.target
+
+[Service]
+Type=simple
+User=why
+Group=why
+WorkingDirectory=/srv/why
+Environment=JAVA_HOME=/usr/lib/jvm/temurin-21-jre-amd64
+ExecStart=/opt/why/bin/why /srv/why/site --host 127.0.0.1 --port 8080 --db /var/lib/why/data.db
+Restart=on-failure
+RestartSec=3
+# Why drains in-flight requests for up to five seconds on SIGTERM.
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# The database is the only writable path the service needs.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/why
+
+[Install]
+WantedBy=multi-user.target

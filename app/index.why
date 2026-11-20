@@ -1,0 +1,65 @@
+imports:
+_app
+_head
+_tail
+_card
+_preview
+_rail
+
+controller:
+me = current_user(db, session)
+uid = viewer_id(me)
+title = "Home / whyx"
+back = "/"
+if me
+  posts = timeline(db, uid)
+else
+  posts = db.query(posts_from(uid) + " where p.parent_id is null order by p.id desc limit 8")
+end
+popular = trending(db, uid)
+suggestions = who_to_follow(db, uid)
+
+view:
+{{> _head}}
+{{#if me}}
+<div class="page">
+  <section class="column">
+    <div class="topbar"><h1>Home</h1></div>
+    {{#if flash.notice}}<p class="notice">{{flash.notice}}</p>{{/if}}
+    {{#if flash.error}}<p class="error">{{flash.error}}</p>{{/if}}
+    <form class="compose" id="compose" method="post" action="/act">
+      <input type="hidden" name="_token" value="{{csrf.token}}">
+      <input type="hidden" name="action" value="post">
+      <input type="hidden" name="back" value="/">
+      <span class="avatar" style="background:{{me.color}}">{{initials(me.name)}}</span>
+      <div class="compose-main">
+        <textarea name="body" rows="2" maxlength="280" placeholder="What is happening?!" required></textarea>
+        <div class="compose-foot">
+          <span class="hint">280 characters</span>
+          <button class="btn primary" type="submit">Post</button>
+        </div>
+      </div>
+    </form>
+    <div class="feed">
+      {{#each posts}}{{> _card}}{{else}}<p class="empty">Your timeline is quiet. Follow someone from the suggestions, or write the first post.</p>{{/each}}
+    </div>
+  </section>
+  {{> _rail}}
+</div>
+{{else}}
+<div class="landing">
+  <div class="landing-left">
+    <svg class="landing-logo" viewBox="0 0 24 24" fill="currentColor"><path d="M23 4.9c-.8.4-1.7.7-2.6.8a4.5 4.5 0 0 0 2-2.5c-.9.5-1.9.9-3 1.1a4.5 4.5 0 0 0-7.7 4.1A12.8 12.8 0 0 1 2.4 3.6a4.5 4.5 0 0 0 1.4 6 4.4 4.4 0 0 1-2-.6v.1a4.5 4.5 0 0 0 3.6 4.4 4.5 4.5 0 0 1-2 .1 4.5 4.5 0 0 0 4.2 3.1A9 9 0 0 1 1 18.7a12.7 12.7 0 0 0 6.9 2c8.3 0 12.8-6.9 12.8-12.8v-.6c.9-.6 1.6-1.4 2.3-2.4z"/></svg>
+    <h1>Happening now</h1>
+    <h2>Join today.</h2>
+    <a class="btn primary wide" href="/signup">Create account</a>
+    <a class="btn outline wide" href="/login">Sign in</a>
+    <p class="fine">A 280-character timeline for a page language. Every account uses the password <code>whylang</code>.</p>
+  </div>
+  <div class="landing-right">
+    <h3>Fresh from the timeline</h3>
+    {{#each posts}}{{> _preview}}{{/each}}
+  </div>
+</div>
+{{/if}}
+{{> _tail}}

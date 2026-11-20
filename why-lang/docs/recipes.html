@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recipes — Why</title>
+<meta name="description" content="Copyable Why recipes: a first page, shared partials, SQLite lists, query parameters, a guestbook with a one-shot flash, and why check in CI.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="Why home"><span class="mark">W</span><span>why</span></a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="usage.html">Using</a>
+      <a href="why.html">The idea</a>
+      <a href="install.html">Install</a>
+      <a href="recipes.html" aria-current="page">Recipes</a>
+      <a class="gh" href="https://github.com/slayyyyer/why-lang">GitHub <span aria-hidden="true">↗</span></a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap docs">
+    <div class="docs-grid">
+      <nav class="toc" aria-label="On this page">
+        <p class="toc-title">On this page</p>
+        <a href="#hello">Hello, file</a>
+        <a href="#layout">A shared layout</a>
+        <a href="#sqlite">A list from SQLite</a>
+        <a href="#params">A query parameter</a>
+        <a href="#guestbook">A guestbook</a>
+        <a href="#ci">Check in CI</a>
+      </nav>
+
+      <article>
+        <p class="eyebrow">Recipes</p>
+        <h1>Small pages that do real work.</h1>
+        <p class="lead">Each recipe is a file or two, not a project. They assume a Gradle project with the <code>io.github.slayyyyer.why</code> plugin, pages under <code>src/why</code>, and <code>./gradlew whyRun</code> serving them; see <a href="install.html">install</a> if you have not started one yet.</p>
+
+        <section class="recipe" id="hello">
+          <div class="recipe-head"><span class="n">01</span><h2>Hello, file</h2></div>
+          <p class="teaches">a page with no sections · the URL is the filename</p>
+          <p>Put a plain HTML file in the site folder. A file with no <code>imports:</code>, <code>controller:</code> or <code>view:</code> labels is all view.</p>
+          <div class="code"><div class="code-title">src/why/hello.why</div><pre><code>&lt;h1&gt;Hello from a file&lt;/h1&gt;
+&lt;p&gt;No build step, no route table.&lt;/p&gt;</code></pre></div>
+          <p>Open <code>/hello</code> (or <code>/hello.why</code>). There is no registration step; the file is the route.</p>
+        </section>
+
+        <section class="recipe" id="layout">
+          <div class="recipe-head"><span class="n">02</span><h2>A shared layout</h2></div>
+          <p class="teaches">imports · partials · import-only files</p>
+          <p>A leading underscore makes a file importable but not reachable. Use it for chrome you never want to serve on its own.</p>
+          <div class="code"><div class="code-title">src/why/_header.why</div><pre><code>view:
+&lt;header class="site"&gt;
+  &lt;strong&gt;My site&lt;/strong&gt;
+  &lt;nav&gt;
+    &lt;a href="/"&gt;home&lt;/a&gt;
+    &lt;a href="/about"&gt;about&lt;/a&gt;
+  &lt;/nav&gt;
+&lt;/header&gt;</code></pre></div>
+          <div class="code"><div class="code-title">src/why/index.why</div><pre><code>imports:
+_header
+
+view:
+{{&gt; _header}}
+&lt;h1&gt;Home&lt;/h1&gt;
+&lt;p&gt;The header is a file, not a component.&lt;/p&gt;</code></pre></div>
+          <p><code>/_header</code> and <code>/_header.why</code> both answer 404; <code>{{&gt; _header}}</code> still works. Imports are transitive, so a header can import its own footer.</p>
+        </section>
+
+        <section class="recipe" id="sqlite">
+          <div class="recipe-head"><span class="n">03</span><h2>A list from SQLite</h2></div>
+          <p class="teaches">schema.sql · db.query · each/else</p>
+          <p>Drop a schema next to the pages. It runs once, when the database file does not exist.</p>
+          <div class="code"><div class="code-title">src/why/schema.sql</div><pre><code>create table if not exists notes (
+  id integer primary key,
+  body text not null,
+  created_at text not null
+);</code></pre></div>
+          <div class="code"><div class="code-title">src/why/notes.why</div><pre><code>imports:
+_header
+
+controller:
+notes = db.query("select * from notes order by id desc")
+
+view:
+{{&gt; _header}}
+&lt;h1&gt;Notes&lt;/h1&gt;
+{{#each notes}}
+  &lt;article&gt;
+    &lt;p&gt;{{it.body}}&lt;/p&gt;
+    &lt;p class="meta"&gt;{{it.created_at}}&lt;/p&gt;
+  &lt;/article&gt;
+{{else}}
+  &lt;p&gt;No notes yet.&lt;/p&gt;
+{{/each}}</code></pre></div>
+          <p>Rows are hashes keyed by column label, so <code>{{it.body}}</code> works. The query returns a list; <code>{{else}}</code> handles the empty case.</p>
+        </section>
+
+        <section class="recipe" id="params">
+          <div class="recipe-head"><span class="n">04</span><h2>A query parameter</h2></div>
+          <p class="teaches">params · db.get · escaped output</p>
+          <p>Query parameters are strings. Bind one into a prepared statement; never concatenate it into SQL.</p>
+          <div class="code"><div class="code-title">src/why/post.why</div><pre><code>controller:
+post = db.get("select * from posts where id = ?", params.id)
+
+view:
+&lt;h1&gt;{{post.title}}&lt;/h1&gt;
+{{{post.body}}}</code></pre></div>
+          <p><code>/post?id=3</code> gives <code>params.id == "3"</code>. <code>{{post.title}}</code> is escaped; <code>{{{post.body}}}</code> is raw. Only use the raw form for content you trust.</p>
+        </section>
+
+        <section class="recipe" id="guestbook">
+          <div class="recipe-head"><span class="n">05</span><h2>A guestbook</h2></div>
+          <p class="teaches">POST · bound insert · flash · redirect</p>
+          <p>One page reads and writes. The POST branch validates, inserts, queues a one-shot notice, and redirects; the GET renders the list and the form.</p>
+          <div class="code"><div class="code-title">src/why/schema.sql (add)</div><pre><code>create table if not exists guestbook (
+  id integer primary key,
+  name text not null,
+  message text not null,
+  created_at text not null
+);</code></pre></div>
+          <div class="code"><div class="code-title">src/why/guestbook.why</div><pre><code>imports:
+_header
+
+controller:
+if request.method == "POST"
+  name = form.name.strip
+  message = form.message.strip
+  if name != "" and message != ""
+    db.exec("insert into guestbook (name, message, created_at) values (?, ?, datetime('now'))", name, message)
+    flash.set("notice", "Thanks — your note is in the book.")
+    redirect("/guestbook")
+  end
+end
+
+entries = db.query("select * from guestbook order by id desc limit 50")
+title = "Guestbook"
+
+view:
+{{&gt; _header}}
+&lt;h1&gt;{{title}}&lt;/h1&gt;
+{{#if flash.notice}}&lt;p class="note"&gt;{{flash.notice}}&lt;/p&gt;{{/if}}
+
+&lt;form method="post" action="/guestbook"&gt;
+  &lt;label&gt;Name &lt;input name="name" maxlength="60" required&gt;&lt;/label&gt;
+  &lt;label&gt;Message &lt;textarea name="message" rows="3" maxlength="500" required&gt;&lt;/textarea&gt;&lt;/label&gt;
+  &lt;button type="submit"&gt;Sign the guestbook&lt;/button&gt;
+&lt;/form&gt;
+
+{{#each entries}}
+  &lt;article&gt;
+    &lt;p class="meta"&gt;&lt;strong&gt;{{it.name}}&lt;/strong&gt; · {{it.created_at}}&lt;/p&gt;
+    &lt;p&gt;{{it.message}}&lt;/p&gt;
+  &lt;/article&gt;
+{{else}}
+  &lt;p&gt;No entries yet. Be the first.&lt;/p&gt;
+{{/each}}</code></pre></div>
+          <p>The flash is keyed by a <code>why_session</code> cookie, shown on the next page request, and then gone. Empty fields fall through silently — the demo's validation is deliberately minimal.</p>
+        </section>
+
+        <section class="recipe" id="ci">
+          <div class="recipe-head"><span class="n">06</span><h2>Check in CI</h2></div>
+          <p class="teaches">why check · GitHub Actions</p>
+          <p><code>why check</code> parses and checks every page and exits <code>1</code> on problems, so it drops into a workflow with no extra plugin.</p>
+          <div class="code"><div class="code-title">.github/workflows/check.yml</div><pre><code>name: check
+on:
+  push:
+  pull_request:
+
+jobs:
+  why:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: ./gradlew whyCheck</code></pre></div>
+          <p>That is the whole check: no server, no database, no port. <code>whyCheck</code> reports imports, partials, duplicate defs, undefined free-function calls and URL collisions, then prints a page map. It also runs as part of <code>./gradlew check</code>.</p>
+        </section>
+
+        <hr>
+        <p>More detail lives in <a href="usage.html">Using Why</a>. The demo site in the repository is the full version of the guestbook recipe.</p>
+      </article>
+    </div>
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <a class="foot-brand" href="index.html"><span class="mark">W</span> Why — a page language for the JVM.</a>
+    <span class="foot-links">
+      <a href="https://github.com/slayyyyer/why-lang">GitHub</a>
+      <a href="https://github.com/slayyyyer/why-lang/blob/main/NOTES.md">Notes</a>
+    </span>
+    <p class="tribute">Named in tribute to <em>why the lucky stiff</em>, whose tiny, whimsical tools (Camping, Shoes, <em>Why's (Poignant) Guide to Ruby</em>) made programming feel like play.</p>
+  </div>
+</footer>
+
+<script src="site.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+view:
+<form class="del-form" method="post" action="/act">
+  <input type="hidden" name="_token" value="{{csrf.token}}">
+  <input type="hidden" name="action" value="delete">
+  <input type="hidden" name="post_id" value="{{it.id}}">
+  <input type="hidden" name="back" value="{{back}}">
+  <button class="del" type="submit" title="Delete post">&#10005;</button>
+</form>

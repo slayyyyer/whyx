@@ -1,0 +1,13 @@
+view:
+<div class="preview">
+  <a class="avatar" href="/profile?handle={{it.handle}}" style="background:{{it.color}}">{{initials(it.name)}}</a>
+  <div class="preview-main">
+    <div class="post-head">
+      <a class="name" href="/profile?handle={{it.handle}}">{{it.name}}</a>
+      <span class="handle">@{{it.handle}}</span>
+      <span class="dot">·</span>
+      <span class="time">{{ago(it.age)}}</span>
+    </div>
+    <p class="preview-text">{{it.body}}</p>
+  </div>
+</div>

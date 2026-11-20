@@ -1,0 +1,66 @@
+imports:
+_app
+_authhead
+_authtail
+
+controller:
+me = current_user(db, session)
+if me
+  redirect("/")
+end
+title = "Sign in / whyx"
+error = ""
+if request.method == "POST"
+  handle = clean_handle(form.handle)
+  password = str(form.password)
+  ip = str(request.remote)
+  # Checked before any PBKDF2 work, so a flood of guesses is cheap for the server and slow for
+  # the caller. Handles are limited too, so one account cannot be used to burn the CPU alone.
+  if login_blocked(db, "handle", handle, login_limit()) or login_blocked(db, "ip", ip, login_ip_limit())
+    error = "Too many sign-in attempts. Wait a few minutes and try again."
+  else
+    user = db.get("select id, name, password_hash from users where handle = ?", handle)
+    stored = dummy_password_hash()
+    if user != nil
+      stored = str(user.password_hash)
+    end
+    # Checked whatever the handle turned out to be: an unknown name and a wrong password both
+    # pay the full derivation and both land on the same message, so neither reveals the other.
+    ok = password_matches(password, stored)
+    if user != nil and ok
+      login_succeeded(db, handle)
+      session.set("user_id", user.id)
+      session.rotate()
+      flash.set("notice", "Welcome back, " + user.name + ".")
+      redirect("/")
+    else
+      login_failed(db, "handle", handle)
+      login_failed(db, "ip", ip)
+      error = "That handle and password do not match."
+    end
+  end
+end
+
+view:
+{{> _authhead}}
+<div class="auth-card">
+  <a class="logo auth-logo" href="/">
+    <svg viewBox="0 0 24 24" width="36" height="36" fill="currentColor"><path d="M23 4.9c-.8.4-1.7.7-2.6.8a4.5 4.5 0 0 0 2-2.5c-.9.5-1.9.9-3 1.1a4.5 4.5 0 0 0-7.7 4.1A12.8 12.8 0 0 1 2.4 3.6a4.5 4.5 0 0 0 1.4 6 4.4 4.4 0 0 1-2-.6v.1a4.5 4.5 0 0 0 3.6 4.4 4.5 4.5 0 0 1-2 .1 4.5 4.5 0 0 0 4.2 3.1A9 9 0 0 1 1 18.7a12.7 12.7 0 0 0 6.9 2c8.3 0 12.8-6.9 12.8-12.8v-.6c.9-.6 1.6-1.4 2.3-2.4z"/></svg>
+  </a>
+  <h1>Sign in to whyx</h1>
+  {{#if flash.notice}}<p class="notice">{{flash.notice}}</p>{{/if}}
+  {{#if error}}<p class="error">{{error}}</p>{{/if}}
+  <form method="post" action="/login">
+    <input type="hidden" name="_token" value="{{csrf.token}}">
+    <label>Handle
+      <input name="handle" value="{{form.handle}}" autocomplete="username" placeholder="alice" required>
+    </label>
+    <label>Password
+      <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+    <button class="btn primary wide" type="submit">Sign in</button>
+  </form>
+  <p class="switch">New here? <a href="/signup">Create an account</a></p>
+  <p class="demo">Demo accounts: alice, bob, carol, dave, erin. Password <code>whylang</code>.</p>
+</div>
+{{> _authtail}}

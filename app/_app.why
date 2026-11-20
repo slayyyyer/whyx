@@ -1,0 +1,141 @@
+controller:
+# A def returns the value of its last expression statement, so these helpers assign into a
+# variable and end with it rather than ending on an if statement.
+def current_user(db, session)
+  id = session.get("user_id")
+  user = nil
+  if id
+    user = db.get("select id, handle, name, color from users where id = ?", int(id))
+  end
+  user
+end
+
+# The id to fold into a query: the viewer's, or 0 for a signed-out visitor.
+def viewer_id(me)
+  id = 0
+  if me
+    id = me.id
+  end
+  id
+end
+
+def ago(seconds)
+  s = int(seconds)
+  label = "now"
+  if s >= 2419200
+    label = str(s / 2419200) + "mo"
+  elsif s >= 604800
+    label = str(s / 604800) + "w"
+  elsif s >= 86400
+    label = str(s / 86400) + "d"
+  elsif s >= 3600
+    label = str(s / 3600) + "h"
+  elsif s >= 60
+    label = str(s / 60) + "m"
+  end
+  label
+end
+
+def initials(name)
+  parts = str(name).split(" ")
+  first = parts[0]
+  last = parts[parts.length - 1]
+  out = "?"
+  if first != nil
+    out = first[0].upcase
+    if parts.length > 1
+      out = (first[0] + last[0]).upcase
+    end
+  end
+  out
+end
+
+# Password rows record their own cost, so the rounds can be raised later without breaking rows.
+def rounds()
+  120000
+end
+
+def clean_handle(text)
+  str(text).downcase.strip.replace("@", "").replace(" ", "").replace("/", "").replace("?", "").replace("#", "").replace("&", "").replace("=", "").replace("+", "").replace("%", "").replace(".", "")
+end
+
+# Sign-in throttling. Every failed attempt is one row and only rows inside the window count, so
+# the limit slides instead of resetting on a fixed clock. The handle limit caps the PBKDF2 work
+# one account can cost and the IP limit caps it for one caller. Handles that do not exist are
+# counted too, so a throttled answer says nothing about whether an account exists.
+def login_window()
+  15 * 60
+end
+
+def login_limit()
+  5
+end
+
+def login_ip_limit()
+  20
+end
+
+def login_blocked(db, kind, key, limit)
+  row = db.get("select count(*) as n from login_attempts where kind = ? and subject = ? and attempted_at > strftime('%s','now') - ?", kind, key, login_window())
+  blocked = int(row.n) >= limit
+  blocked
+end
+
+def login_failed(db, kind, key)
+  db.exec("insert into login_attempts (kind, subject, attempted_at) values (?, ?, strftime('%s','now'))", kind, key)
+  db.exec("delete from login_attempts where attempted_at < strftime('%s','now') - ?", login_window())
+end
+
+# A success clears that account's failures so its owner can start over. The caller's IP window is
+# left alone, so a valid login cannot buy an attacker a fresh budget to guess with.
+def login_succeeded(db, handle)
+  db.exec("delete from login_attempts where kind = 'handle' and subject = ?", handle)
+end
+
+# A hash nothing matches, at the cost this app writes, so an unknown handle pays the same PBKDF2
+# work as a real account given the wrong password.
+def dummy_password_hash()
+  hash = "pbkdf2-sha256$" + str(rounds()) + "$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000"
+  hash
+end
+
+def password_matches(password, stored)
+  parts = str(stored).split("$")
+  ok = false
+  if parts.length == 4 and parts[0] == "pbkdf2-sha256"
+    ok = pbkdf2(password, parts[2], int(parts[1])) == parts[3]
+  end
+  ok
+end
+
+# One timeline row with its author and interaction counts. The viewer id is folded in,
+# so liked and reposted are 0 for a signed-out visitor.
+def post_columns(uid)
+  who = int(uid)
+  "p.id as id, p.user_id as user_id, p.parent_id as parent_id, p.body as body, p.created_at as created_at, cast(strftime('%s','now') - strftime('%s', p.created_at) as integer) as age, u.handle as handle, u.name as name, u.color as color, (select count(*) from posts r where r.parent_id = p.id) as replies, (select count(*) from likes l where l.post_id = p.id) as likes, (select count(*) from reposts rp where rp.post_id = p.id) as reposts, (select count(*) from likes l where l.post_id = p.id and l.user_id = #{who}) as liked, (select count(*) from reposts rp where rp.post_id = p.id and rp.user_id = #{who}) as reposted"
+end
+
+# Every post list starts from this join, so the column list and the author join live in one place.
+def posts_from(uid)
+  "select " + post_columns(uid) + " from posts p join users u on u.id = p.user_id"
+end
+
+# The home timeline: posts from the people a viewer follows, plus the posts those people reposted,
+# newest event first. A repost carries the reposter's name and handle so the card can credit them.
+def timeline(db, uid)
+  who = int(uid)
+  followed = "(select followee_id from follows where follower_id = #{who})"
+  events = "select p.id as id, null as reposted_handle, null as reposted_name, cast(strftime('%s', p.created_at) as integer) as on_at from posts p where p.parent_id is null and (p.user_id = #{who} or p.user_id in " + followed + ") union all select p.id as id, ru.handle as reposted_handle, ru.name as reposted_name, cast(strftime('%s', r.created_at) as integer) as on_at from reposts r join posts p on p.id = r.post_id join users ru on ru.id = r.user_id where p.parent_id is null and (r.user_id = #{who} or r.user_id in " + followed + ")"
+  # One row per post: its newest event wins, and a repost wins a same-second tie so the share is
+  # credited. Without this, a post from someone the viewer follows would appear again per repost.
+  ranked = "select e.*, row_number() over (partition by e.id order by e.on_at desc, e.reposted_handle is null) as rn from (" + events + ") e"
+  db.query("select " + post_columns(uid) + ", t.reposted_handle as reposted_handle, t.reposted_name as reposted_name, t.on_at as on_at from (" + ranked + ") t join posts p on p.id = t.id join users u on u.id = p.user_id where t.rn = 1 order by t.on_at desc, p.id desc limit 40")
+end
+
+def trending(db, uid)
+  db.query(posts_from(uid) + " where p.created_at > datetime('now', '-7 days') order by likes desc, p.id desc limit 3")
+end
+
+def who_to_follow(db, uid)
+  db.query("select u.id as id, u.handle as handle, u.name as name, u.color as color, (select count(*) from follows f where f.followee_id = u.id) as followers from users u where u.id != ? and u.id not in (select followee_id from follows where follower_id = ?) order by followers desc, u.id limit 4", uid, uid)
+end
