@@ -13,6 +13,7 @@ import whyx.boot.WhyApplication;
 @WhyApplication(seed = true)
 public final class Main {
     public static void main(String[] args) {
-        WhyApp.run(Main.class, args);
+        int status = WhyApp.run(Main.class, args);
+        if (status != 0) System.exit(status);
     }
 }

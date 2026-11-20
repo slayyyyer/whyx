@@ -6,7 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -18,10 +21,13 @@ import why.Site;
 
 /**
  * The launcher's configuration and seed gate, without opening a server: flags and environment
- * defaults are parsed into {@link WhyApp.Options}, and seeding is applied only to a database that
- * did not exist before the site was opened.
+ * defaults are parsed into {@link WhyApp.Options}, seeding is applied only to a database that did
+ * not exist before the site was opened, and the paths that never reach the server return an exit
+ * status instead of exiting the process.
  */
 class WhyAppTest {
+    private static final Map<String, String> NO_ENVIRONMENT = Map.of();
+
     @Test
     void usesDefaultsWhenNothingIsConfigured() {
         WhyApp.Options options = parse();
@@ -150,6 +156,57 @@ class WhyAppTest {
                 "a disabled seed skips a fresh database");
     }
 
+    @Test
+    void rejectsAnUnannotatedApplication() {
+        Output out = new Output();
+        Output err = new Output();
+
+        int status = WhyApp.run(String.class, new String[0], NO_ENVIRONMENT::get,
+                out.stream, err.stream);
+
+        assertEquals(1, status);
+        assertEquals(String.class.getName() + " is not annotated with @WhyApplication",
+                err.text().strip());
+        assertEquals("", out.text());
+    }
+
+    @Test
+    void printsHelpAndReturnsSuccessWithoutStartingTheServer() {
+        Output out = new Output();
+        Output err = new Output();
+
+        int status = WhyApp.run(Annotated.class, new String[] {"--help"},
+                NO_ENVIRONMENT::get, out.stream, err.stream);
+
+        assertEquals(0, status);
+        assertTrue(out.text().contains("usage: java -jar whyx.jar"));
+        assertEquals("", err.text());
+    }
+
+    @Test
+    void reportsConfigurationErrorsAsFailures() {
+        Output out = new Output();
+        Output optionErr = new Output();
+        Output environmentErr = new Output();
+
+        int optionStatus = WhyApp.run(Annotated.class, new String[] {"--bogus"},
+                NO_ENVIRONMENT::get, out.stream, optionErr.stream);
+        int environmentStatus = WhyApp.run(Annotated.class, new String[0],
+                Map.of("PORT", "abc")::get, out.stream, environmentErr.stream);
+
+        assertEquals(1, optionStatus);
+        assertTrue(optionErr.text().strip().endsWith("unknown option '--bogus'"));
+        assertEquals(1, environmentStatus);
+        assertTrue(environmentErr.text().strip().endsWith("port must be a number, got 'abc'"));
+        assertEquals("", out.text());
+    }
+
+    @Test
+    void readsSeedConfigurationFromTheAnnotatedClass() {
+        assertTrue(WhyApp.configuration(Seeded.class).seed());
+        assertFalse(WhyApp.configuration(Annotated.class).seed());
+    }
+
     private static WhyApp.Options parse(String... args) {
         return parse(args, Map.of());
     }
@@ -157,4 +214,19 @@ class WhyAppTest {
     private static WhyApp.Options parse(String[] args, Map<String, String> environment) {
         return WhyApp.Options.parse(args, environment::get);
     }
+
+    private static final class Output {
+        private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        final PrintStream stream = new PrintStream(bytes, true, StandardCharsets.UTF_8);
+
+        String text() {
+            return bytes.toString(StandardCharsets.UTF_8);
+        }
+    }
+
+    @WhyApplication
+    static final class Annotated {}
+
+    @WhyApplication(seed = true)
+    static final class Seeded {}
 }

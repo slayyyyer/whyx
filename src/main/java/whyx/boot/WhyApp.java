@@ -1,11 +1,14 @@
 package whyx.boot;
 
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
 import why.Seeds;
@@ -24,7 +27,8 @@ import why.WhyServer;
  * @WhyApplication(seed = true)
  * public final class Main {
  *     public static void main(String[] args) {
- *         WhyApp.run(Main.class, args);
+ *         int status = WhyApp.run(Main.class, args);
+ *         if (status != 0) System.exit(status);
  *     }
  * }
  * }</pre>
@@ -32,53 +36,96 @@ import why.WhyServer;
 public final class WhyApp {
     private WhyApp() {}
 
-    /** Starts the application, or prints help and returns. Exits 1 on a usage or startup error. */
-    public static void run(Class<?> application, String[] args) {
-        WhyApplication annotation = application.getAnnotation(WhyApplication.class);
-        if (annotation == null) {
+    /**
+     * Runs the application until it stops and returns the process exit status: 0 after help or a
+     * clean shutdown, 1 for a configuration or startup error.
+     */
+    public static int run(Class<?> application, String[] args) {
+        return run(application, args, System::getenv, System.out, System.err);
+    }
+
+    static int run(Class<?> application, String[] args, Function<String, String> environment,
+            PrintStream out, PrintStream err) {
+        try {
+            Optional<Lifecycle> started = start(application, args, environment, out);
+            if (started.isEmpty()) return 0;
+
+            Lifecycle lifecycle = started.get();
+            Runtime.getRuntime().addShutdownHook(new Thread(lifecycle::stop, "why-shutdown"));
+            lifecycle.await();
+            return 0;
+        } catch (OptionException e) {
+            err.println(name(application) + ": " + e.getMessage());
+            return 1;
+        } catch (IllegalArgumentException e) {
+            err.println(e.getMessage());
+            return 1;
+        } catch (IOException e) {
+            err.println(name(application) + ": cannot start server: " + e.getMessage());
+            return 1;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return 1;
+        }
+    }
+
+    /**
+     * Opens the site in {@code application}'s class loader and starts the server, or returns empty
+     * after printing help. The caller owns the returned lifecycle and must stop it.
+     *
+     * <p>The annotated application class still supplies its launch configuration, such as
+     * {@link WhyApplication#seed()}; flags and environment supply the runtime settings.
+     */
+    public static Optional<Lifecycle> start(Class<?> application, String[] args)
+            throws IOException {
+        return start(application, args, System::getenv, System.out);
+    }
+
+    static Optional<Lifecycle> start(Class<?> application, String[] args,
+            Function<String, String> environment, PrintStream out) throws IOException {
+        WhyApplication configuration = configuration(application);
+        Options options = Options.parse(args, environment);
+        if (options.help()) {
+            usage(out);
+            return Optional.empty();
+        }
+
+        Path db = options.db();
+        // Site.fromClasspath creates the schema while opening the database, so decide whether it
+        // is new first.
+        boolean fresh = isFresh(db);
+        Site site = Site.fromClasspath(application.getClassLoader(), db);
+        if (applySeed(configuration.seed(), site, fresh)) {
+            out.println(name(application) + ": applied seed.sql to the new database");
+        }
+
+        WhyServer server = new WhyServer(site, options.host(), options.port(),
+                options.diagnostics(), options.secureCookies(), options.trustProxy());
+        server.start();
+        String shown = switch (options.host()) {
+            case "127.0.0.1", "::1", "localhost" -> "localhost";
+            default -> options.host();
+        };
+        out.println("Why is serving " + site.root() + " at http://" + shown + ":"
+                + server.port());
+        out.println("press Ctrl+C to stop");
+        return Optional.of(new Lifecycle(server));
+    }
+
+    /** Reads the launch configuration declared by the annotated application class. */
+    static WhyApplication configuration(Class<?> application) {
+        WhyApplication configuration = application.getAnnotation(WhyApplication.class);
+        if (configuration == null) {
             throw new IllegalArgumentException(
                     application.getName() + " is not annotated with @WhyApplication");
         }
+        return configuration;
+    }
 
+    /** The name used for startup messages: the package, or {@code why} in the default package. */
+    private static String name(Class<?> application) {
         String name = application.getPackageName();
-        if (name.isBlank()) name = "why";
-
-        try {
-            Options options = Options.parse(args);
-            if (options.help()) {
-                usage();
-                return;
-            }
-
-            Path db = options.db();
-            // Site.fromClasspath creates the schema while opening the database, so decide whether
-            // it is new first.
-            boolean fresh = isFresh(db);
-            Site site = Site.fromClasspath(application.getClassLoader(), db);
-            if (applySeed(annotation.seed(), site, fresh)) {
-                System.out.println(name + ": applied seed.sql to the new database");
-            }
-
-            WhyServer server = new WhyServer(site, options.host(), options.port(),
-                    options.diagnostics(), options.secureCookies(), options.trustProxy());
-            server.start();
-            String shown = switch (options.host()) {
-                case "127.0.0.1", "::1", "localhost" -> "localhost";
-                default -> options.host();
-            };
-            System.out.println("Why is serving " + site.root() + " at http://" + shown + ":"
-                    + server.port());
-            System.out.println("press Ctrl+C to stop");
-            Runtime.getRuntime().addShutdownHook(
-                    new Thread(() -> server.stop(Duration.ofSeconds(5))));
-            new CountDownLatch(1).await();
-        } catch (OptionException e) {
-            fail(name, e.getMessage());
-        } catch (IOException e) {
-            fail(name, "cannot start server: " + e.getMessage());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        return name.isBlank() ? "why" : name;
     }
 
     /** Whether this run has to create the database. A null path is the temporary database. */
@@ -124,13 +171,8 @@ public final class WhyApp {
         };
     }
 
-    private static void fail(String name, String message) {
-        System.err.println(name + ": " + message);
-        System.exit(1);
-    }
-
-    private static void usage() {
-        System.out.println("""
+    private static void usage(PrintStream out) {
+        out.println("""
                 usage: java -jar whyx.jar [options]
 
                   -p, --port PORT      port to listen on (default: 8080)
@@ -144,6 +186,42 @@ public final class WhyApp {
                 Environment: PORT, HOST, WHY_DB and WHY_SECURE_COOKIES supply the defaults.
                 The pages come from the jar; there is no site folder to pass.
                 """);
+    }
+
+    /** A running application. Stop it to drain requests and release the port. */
+    public static final class Lifecycle implements AutoCloseable {
+        private final WhyServer server;
+        private final CountDownLatch stopped = new CountDownLatch(1);
+        private final AtomicBoolean stopping = new AtomicBoolean();
+
+        private Lifecycle(WhyServer server) {
+            this.server = server;
+        }
+
+        /** The port the server bound, which may differ from the requested port. */
+        public int port() {
+            return server.port();
+        }
+
+        /** Blocks until the lifecycle is stopped. */
+        public void await() throws InterruptedException {
+            stopped.await();
+        }
+
+        /** Stops accepting requests, drains for up to five seconds and releases the port. */
+        public void stop() {
+            if (!stopping.compareAndSet(false, true)) return;
+            try {
+                server.stop(Duration.ofSeconds(5));
+            } finally {
+                stopped.countDown();
+            }
+        }
+
+        @Override
+        public void close() {
+            stop();
+        }
     }
 
     /** Parsed flags and environment defaults. */
@@ -183,8 +261,8 @@ public final class WhyApp {
     }
 
     /** A problem with the command line or environment, reported as one line before exit. */
-    static final class OptionException extends RuntimeException {
-        OptionException(String message) {
+    public static final class OptionException extends RuntimeException {
+        public OptionException(String message) {
             super(message);
         }
     }
