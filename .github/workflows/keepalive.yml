@@ -1,0 +1,24 @@
+# Pokes the demo so Render's free instance does not fall asleep after 15 idle minutes. The address
+# comes from the SITE_URL repository variable; without it the job skips rather than failing.
+name: keepalive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the demo
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          if [ -z "$SITE_URL" ]; then
+            echo "SITE_URL is not set. Add the demo URL under Settings -> Secrets and variables -> Actions -> Variables to turn the keepalive on."
+            exit 0
+          fi
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -m 90 --retry 2 --retry-delay 15 --retry-all-errors "$SITE_URL")
+          echo "$SITE_URL answered $code"
+          [ "$code" = "200" ]
