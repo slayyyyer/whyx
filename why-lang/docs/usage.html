@@ -257,22 +257,22 @@ end
 ./gradlew whyCheck</code></pre></div>
         <p>Anything else — a different host, a database outside the project, diagnostics — is a <code>why</code> extension property. The flags below are what <code>whyRun</code> and <code>whyCheck</code> pass to the same CLI:</p>
         <div class="code"><div class="code-title">terminal</div><pre><code># the CLI directly, from a checkout or a shaded jar
-java -jar target/why.jar ./site
+java -jar build/libs/why.jar ./site
 
 # choose a port and database file outside the site folder
-java -jar target/why.jar ./site --port 3000 --db ./data.db
+java -jar build/libs/why.jar ./site --port 3000 --db ./data.db
 
 # show source, SQL errors and stack traces while developing
-java -jar target/why.jar ./site --dev
+java -jar build/libs/why.jar ./site --dev
 
 # accept connections from another machine (default binds 127.0.0.1)
-java -jar target/why.jar ./site --host 0.0.0.0
+java -jar build/libs/why.jar ./site --host 0.0.0.0
 
 # behind TLS, mark session cookies Secure
-java -jar target/why.jar ./site --secure-cookies
+java -jar build/libs/why.jar ./site --secure-cookies
 
 # parse and check every page without serving it
-java -jar target/why.jar check ./site</code></pre></div>
+java -jar build/libs/why.jar check ./site</code></pre></div>
         <p><code>check</code> reports unresolved imports and partials, duplicate defs, undefined function calls and URL collisions, then prints a page map. It exits 1 when it finds anything and never touches the database.</p>
         <div class="code"><div class="code-title">why check</div><pre><code>checking 3 pages in /srv/why/site
 

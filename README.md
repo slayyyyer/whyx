@@ -14,17 +14,18 @@ Demo accounts are `alice`, `bob`, `carol`, `dave`, `erin` and `frank`, all with 
   the demo data back.
 - `why-lang/` — the vendored runtime. Its changes are server-side sessions with sign-in rotation,
   PBKDF2 password hashing and string indexing; the rest is upstream.
-- `Dockerfile` — two stages: Maven builds the shaded CLI jar, then a JRE image runs the site.
+- `Dockerfile` — two stages: the Gradle wrapper builds the shaded CLI jar, then a JRE image runs
+  the site.
 - `.github/workflows/image.yml` — builds and pushes `ghcr.io/slayyyyer/whyx:latest` on every push to
   `main`.
 
 ## Run it locally
 
-Needs JDK 21.
+Needs JDK 21; the Gradle wrapper fetches the build tool.
 
 ```bash
-mvn -f why-lang/pom.xml package
-java -jar why-lang/target/why.jar app --port 3000 --dev
+(cd why-lang && ./gradlew shadowJar)
+java -jar why-lang/build/libs/why.jar app --port 3000 --dev
 ```
 
 Then open http://localhost:3000. `--dev` shows source and SQL in 500 pages; drop it to see the plain
@@ -33,8 +34,8 @@ error page.
 ## Checks
 
 ```bash
-mvn -f why-lang/pom.xml test
-java -jar why-lang/target/why.jar check app
+(cd why-lang && ./gradlew test)
+java -jar why-lang/build/libs/why.jar check app
 ```
 
 `test` runs the runtime's suite, including `WhyxAppTest`, which drives the real pages through
@@ -86,12 +87,5 @@ also disables scheduled workflows after 60 days without repository activity.
 
 ## TODO
 
-- [ ] **Switch install and run from Maven to the Gradle path.** The wrapper (`why-lang/gradlew`) and
-  `why-lang/build.gradle.kts` are already here, but the Gradle build only produces the library jar:
-  there is no shaded CLI jar and no `Main-Class`, so `./gradlew build` cannot replace `mvn package`
-  yet. To finish the move: add a runnable-jar task (the Shadow plugin, or `application` plus
-  `installDist`) producing `why.jar` with `Main-Class: why.Main`; point `bin/why`, `deploy/` and the
-  Dockerfile's build stage at that output; update the commands above; then retire `pom.xml` along
-  with the `checkVersion` task that keeps `gradle.properties` and the pom in step.
 - [ ] Re-test the Render health check on `/health` once the service is up, and put `/health` back in
   the dashboard if it passes.

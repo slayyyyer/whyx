@@ -4,6 +4,7 @@ plugins {
     `java-library`
     `maven-publish`
     signing
+    id("com.gradleup.shadow") version "8.3.6"
 }
 
 group = "io.github.slayyyyer"
@@ -34,36 +35,16 @@ tasks.test {
 }
 
 /**
- * The version lives in gradle.properties. Maven cannot read it and the plugin needs it at runtime,
- * so fail the build as soon as either copy drifts.
+ * The CLI as a single jar: `build/libs/why.jar`. `bin/why`, `deploy/` and the whyx image all run
+ * this file, so it carries the SQLite driver and names `why.Main` as its entry point.
  */
-val checkVersion by tasks.registering {
-    group = "verification"
-    description = "Checks that pom.xml and the plugin agree with gradle.properties."
-    val expected = version.toString()
-    val pomFile = layout.projectDirectory.file("pom.xml")
-    val pluginSource = layout.projectDirectory.file(
-        "why-gradle-plugin/src/main/java/why/gradle/WhyPlugin.java")
-    inputs.file(pomFile)
-    inputs.file(pluginSource)
-    inputs.property("version", expected)
-    doLast {
-        val pom = pomFile.asFile.readText()
-        val declared = Regex("""<artifactId>why-lang</artifactId>\s*<version>([^<]+)</version>""")
-            .find(pom)?.groupValues?.get(1)
-            ?: throw GradleException("pom.xml does not declare a why-lang version")
-        if (declared != expected) {
-            throw GradleException("pom.xml says $declared but gradle.properties says $expected")
-        }
-        val hardcoded = Regex("""io\.github\.slayyyyer:why-lang:\d""")
-        if (hardcoded.containsMatchIn(pluginSource.asFile.readText())) {
-            throw GradleException(
-                "WhyPlugin.java hardcodes a runtime version; read it from why-version.properties")
-        }
-    }
+tasks.named<Jar>("shadowJar") {
+    archiveFileName.set("why.jar")
+    manifest.attributes["Main-Class"] = "why.Main"
+    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
 }
 
-tasks.named("check") { dependsOn(checkVersion) }
+tasks.named("assemble") { dependsOn("shadowJar") }
 
 val signingKey = providers.gradleProperty("signingKey")
     .orElse(providers.environmentVariable("SIGNING_KEY"))

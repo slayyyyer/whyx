@@ -24,7 +24,7 @@ carries an `X-Request-Id` that also appears at the start of the request log line
 
 ```bash
 sudo install -d /opt/why /srv/why /var/lib/why
-sudo cp -r bin target/why.jar /opt/why/       # after `mvn package`
+sudo cp -r bin build/libs/why.jar /opt/why/   # after `./gradlew shadowJar`
 sudo cp -r site/. /srv/why/site/
 sudo useradd --system --home /srv/why --shell /usr/sbin/nologin why
 sudo chown -R why:why /srv/why /var/lib/why

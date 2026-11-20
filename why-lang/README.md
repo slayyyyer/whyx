@@ -53,17 +53,18 @@ reports unresolved imports and partials, duplicate `def`s, undefined function ca
 collisions, then prints a page map. It exits 1 when it finds anything and does not touch the
 database.
 
-## Without Gradle
+## Without a project
 
-A folder of pages needs no project. `why new` writes a starter site and `bin/why` runs the CLI jar:
+A folder of pages needs no Gradle project. `why new` writes a starter site and `bin/why` runs the
+CLI jar:
 
 ```bash
-mvn package
+./gradlew shadowJar
 ./bin/why new mysite
 ./bin/why mysite
 ```
 
-`bin/why` uses `target/why.jar` unless `WHY_JAR` points at another copy; `bin/why.cmd` is the
+`bin/why` uses `build/libs/why.jar` unless `WHY_JAR` points at another copy; `bin/why.cmd` is the
 Windows launcher. `why new` writes pages, a stylesheet and a `schema.sql`, and refuses a folder that
 is not empty.
 
@@ -128,15 +129,14 @@ try (TestServer server = TestServer.start(Path.of("src/why"))) {
 
 ## From source
 
-The repository carries both a Maven build for the shaded CLI jar and a Gradle build for the library
-and plugin. To work on Why itself:
+One Gradle build produces the library, the plugin and the shaded CLI jar. To work on Why itself:
 
 ```bash
-mvn package
-java -jar target/why.jar ./site
+./gradlew shadowJar
+java -jar build/libs/why.jar ./site
 ```
 
-`java -jar target/why.jar check ./site` parses and checks the site without serving it. The CLI
+`java -jar build/libs/why.jar check ./site` parses and checks the site without serving it. The CLI
 accepts `--port`, `--host`, `--db`, `--dev` and `--secure-cookies`; the plugin exposes the same
 settings through the `why` extension.
 
@@ -172,13 +172,13 @@ cd docs
 jwebserver -p 4000
 ```
 
-This working copy has no system-wide Java or Maven, so it carries a portable toolchain in the
-gitignored `.tools/` folder. The same build from this folder:
+This working copy has no system-wide Java, so it carries a portable JDK in the gitignored `.tools/`
+folder; the Gradle wrapper supplies the build tool. The same build from this folder:
 
 ```bash
 export JAVA_HOME="$PWD/.tools/jdk"; export PATH="$JAVA_HOME/bin:$PATH"
-.tools/mvn/bin/mvn package
-.tools/jdk/bin/java -jar target/why.jar ./site --port 3000
+./gradlew shadowJar
+.tools/jdk/bin/java -jar build/libs/why.jar ./site --port 3000
 ```
 
 Status: **a proof of concept**. The page format, controller language, views, SQLite access, forms,
@@ -207,7 +207,7 @@ See [SECURITY.md](SECURITY.md) for the full security policy and deployment check
 
 ## M0 — the shell
 
-- Java 21, Maven, one runnable `target/why.jar` (SQLite JDBC shaded in).
+- Java 21, the Gradle wrapper, one runnable `build/libs/why.jar` (SQLite JDBC shaded in).
 - `com.sun.net.httpserver.HttpServer` with a virtual-thread executor.
 - Every `.why` file under the site folder is served at its path: `/` is `index.why`,
   `/posts/archive` is `posts/archive.why`, and `/about` also finds `about.why`. Files whose name
@@ -460,7 +460,7 @@ rejected with 403 before the page runs.
 ## Project layout
 
 ```
-pom.xml, build.gradle.kts, settings.gradle.kts, gradlew
+build.gradle.kts, settings.gradle.kts, gradlew
 site/                      demo site: pages, partials, CSS, schema.sql
 docs/                      project site, published to GitHub Pages
 why-gradle-plugin/         the `io.github.slayyyyer.why` plugin and its TestKit tests

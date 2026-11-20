@@ -2,10 +2,10 @@
 # Runs the Why CLI. Set WHY_JAR to an existing jar; the default is the repository build.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-jar="${WHY_JAR:-$here/target/why.jar}"
+jar="${WHY_JAR:-$here/build/libs/why.jar}"
 if [[ ! -f "$jar" ]]; then
     echo "why: no CLI jar at $jar" >&2
-    echo "why: build one with 'mvn package', or set WHY_JAR to a downloaded why.jar" >&2
+    echo "why: build one with './gradlew shadowJar', or set WHY_JAR to a downloaded why.jar" >&2
     exit 1
 fi
 exec "${JAVA_HOME:+$JAVA_HOME/bin/}java" -jar "$jar" "$@"

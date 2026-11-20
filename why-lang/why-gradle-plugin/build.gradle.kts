@@ -111,7 +111,6 @@ tasks.withType<Sign>().configureEach {
 
 tasks.test {
     useJUnitPlatform()
-    dependsOn(":checkVersion")
     dependsOn(":publishAllPublicationsToTestRepository")
     dependsOn("publishAllPublicationsToTestRepository")
     systemProperty("why.test.repo", rootProject.layout.buildDirectory.dir("test-repo").get().asFile.absolutePath)

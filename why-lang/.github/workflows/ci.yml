@@ -20,16 +20,16 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-          cache: maven
+          cache: gradle
 
       - name: Check the docs stay in sync
         run: node tools/check-docs.mjs
 
       - name: Run tests and build the jar
-        run: mvn -B verify
+        run: ./gradlew --no-daemon :build
 
       - name: Check the demo site
-        run: java -jar target/why.jar check ./site
+        run: java -jar build/libs/why.jar check ./site
 
   gradle-plugin:
     runs-on: ubuntu-latest

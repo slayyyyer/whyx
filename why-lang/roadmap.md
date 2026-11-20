@@ -11,15 +11,15 @@ repository.
 
 ### [x] 1. One source of truth for the version
 
-The version is hardcoded in four places, not the three `RELEASING.md` names:
-`build.gradle.kts`, `why-gradle-plugin/build.gradle.kts`, `pom.xml`, and
+The version was hardcoded in four places, not the three `RELEASING.md` named: `build.gradle.kts`,
+`why-gradle-plugin/build.gradle.kts`, the Maven build, and
 `WhyPlugin.RUNTIME = "io.github.slayyyyer:why-lang:0.1.0"`. A 0.2.0 release that follows the
 runbook verbatim ships a plugin that silently pulls the 0.1.0 runtime.
 
 Why: cheap to fix, and the failure mode is invisible until a consumer reports a missing fix.
 
-Done when the Gradle builds read one version, the plugin's runtime coordinate is derived rather
-than typed, and a check fails the build when `pom.xml` drifts from it.
+Done when the Gradle builds read one version and the plugin's runtime coordinate is derived rather
+than typed. With the Maven build gone, `gradle.properties` is the only copy left.
 
 ### [!] 2. Publish the plugin to the Gradle Plugin Portal
 
@@ -178,7 +178,7 @@ down.
 - Item 2 is configured (`com.gradle.plugin-publish` 1.3.0, website and VCS URLs) but cannot be
   published from here: `publishPlugins` needs `GRADLE_PUBLISH_KEY` and `GRADLE_PUBLISH_SECRET`.
 - Item 7 ships `why new` and `bin/why`/`bin/why.cmd`; a published standalone CLI jar is still the
-  missing piece, so the launcher needs `mvn package` or a `WHY_JAR` path.
+  missing piece, so the launcher needs `./gradlew shadowJar` or a `WHY_JAR` path.
 - Item 11 took the second half of its "done when": `tools/check-docs.mjs` fails when the README and
   the site disagree. Generation from one source is still open.
 - Item 13 is untouched. `Site` is path-based throughout (`PageLoader`, `PageCompiler`, `WhyServer`),

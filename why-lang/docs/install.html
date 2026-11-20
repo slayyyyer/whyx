@@ -126,11 +126,11 @@ server.start();</code></pre></div>
         <p><code>Site.fromClasspath()</code> extracts the indexed resources to a temporary folder and bootstraps <code>schema.sql</code> when the database does not exist. Pass an explicit <code>dbFile</code> to keep data across restarts. Resources from multiple jars merge when their page names differ; a duplicate path is an error.</p>
 
         <h2 id="source">From source</h2>
-        <p>To work on Why itself, clone the repository. It carries both a Maven build for the shaded CLI jar and a Gradle build for the library and plugin.</p>
+        <p>To work on Why itself, clone the repository. One Gradle build produces the library, the plugin and the shaded CLI jar.</p>
         <div class="code"><div class="code-title">terminal</div><pre><code>git clone https://github.com/slayyyyer/why-lang.git
 cd why-lang
-mvn package
-java -jar target/why.jar ./site</code></pre></div>
+./gradlew shadowJar
+java -jar build/libs/why.jar ./site</code></pre></div>
         <p>The demo site starts on <code>http://localhost:8080</code>. To try a local build of the plugin against a consumer project instead, publish it locally and add <code>mavenLocal()</code> ahead of <code>mavenCentral()</code> in both repository blocks above:</p>
         <div class="code"><div class="code-title">terminal</div><pre><code>./gradlew publishToMavenLocal :why-gradle-plugin:publishToMavenLocal</code></pre></div>
 
@@ -162,7 +162,7 @@ java -jar target/why.jar ./site</code></pre></div>
         <p>There is no migration runner. In development, deleting the database and letting <code>schema.sql</code> recreate it is the whole story. In anything you care about, keep the schema and migrations outside Why.</p>
 
         <h2 id="deploy">Running it somewhere</h2>
-        <p>The artifact is your application jar with the pages inside it, or <code>target/why.jar</code> plus a site folder for the CLI. On a server, run it under whatever supervises processes, put it behind a reverse proxy if it is exposed, keep the SQLite database outside the site folder, and keep backups of the SQLite file.</p>
+        <p>The artifact is your application jar with the pages inside it, or <code>build/libs/why.jar</code> plus a site folder for the CLI. On a server, run it under whatever supervises processes, put it behind a reverse proxy if it is exposed, keep the SQLite database outside the site folder, and keep backups of the SQLite file.</p>
         <div class="callout warn">
           <p><strong>Not production-hardened.</strong> There is no TLS, authentication, rate limiting or sandbox. Pages can run arbitrary SQL and read the database. Run it on a trusted network, or treat it as a prototype.</p>
         </div>
