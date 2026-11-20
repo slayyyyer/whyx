@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
+import java.util.function.Function;
 
 import why.Seeds;
 import why.Site;
@@ -51,11 +52,10 @@ public final class WhyApp {
 
             Path db = options.db();
             // Site.fromClasspath creates the schema while opening the database, so decide whether
-            // it is new first. Without --db the site extracts to a temporary folder whose database
-            // is new on every run.
-            boolean fresh = db == null || !Files.exists(db);
+            // it is new first.
+            boolean fresh = isFresh(db);
             Site site = Site.fromClasspath(application.getClassLoader(), db);
-            if (Seeds.apply(site.root(), site.dbFile(), fresh, annotation.seed())) {
+            if (applySeed(annotation.seed(), site, fresh)) {
                 System.out.println(name + ": applied seed.sql to the new database");
             }
 
@@ -81,6 +81,19 @@ public final class WhyApp {
         }
     }
 
+    /** Whether this run has to create the database. A null path is the temporary database. */
+    static boolean isFresh(Path db) {
+        return db == null || !Files.exists(db);
+    }
+
+    /**
+     * Applies {@code seed.sql} when seeding is enabled and the database did not exist before the
+     * site was opened.
+     */
+    static boolean applySeed(boolean enabled, Site site, boolean fresh) throws IOException {
+        return Seeds.apply(site.root(), site.dbFile(), fresh, enabled);
+    }
+
     private static String value(String[] args, int index, String option) {
         if (index >= args.length) throw new OptionException("option " + option + " needs a value");
         return args[index];
@@ -94,23 +107,24 @@ public final class WhyApp {
         }
     }
 
-    private static String env(String name, String fallback) {
-        String value = System.getenv(name);
+    private static String env(Function<String, String> environment, String name,
+            String fallback) {
+        String value = environment.apply(name);
         return value == null || value.isBlank() ? fallback : value.strip();
     }
 
-    private static Path envPath(String name) {
-        String value = env(name, null);
+    private static Path envPath(Function<String, String> environment, String name) {
+        String value = env(environment, name, null);
         return value == null ? null : Path.of(value);
     }
 
-    private static int envPort(int fallback) {
-        String value = env("PORT", null);
+    private static int envPort(Function<String, String> environment, int fallback) {
+        String value = env(environment, "PORT", null);
         return value == null ? fallback : parsePort(value);
     }
 
-    private static boolean envFlag(String name) {
-        String value = env(name, null);
+    private static boolean envFlag(Function<String, String> environment, String name) {
+        String value = env(environment, name, null);
         if (value == null) return false;
         return switch (value.toLowerCase(Locale.ROOT)) {
             case "1", "true", "yes", "on" -> true;
@@ -143,14 +157,18 @@ public final class WhyApp {
     }
 
     /** Parsed flags and environment defaults. */
-    private record Options(String host, int port, Path db, boolean diagnostics,
-            boolean secureCookies, boolean trustProxy, boolean help) {
+    record Options(String host, int port, Path db, boolean diagnostics, boolean secureCookies,
+            boolean trustProxy, boolean help) {
         static Options parse(String[] args) {
-            String host = env("HOST", "127.0.0.1");
-            int port = envPort(8080);
-            Path db = envPath("WHY_DB");
+            return parse(args, System::getenv);
+        }
+
+        static Options parse(String[] args, Function<String, String> environment) {
+            String host = env(environment, "HOST", "127.0.0.1");
+            int port = envPort(environment, 8080);
+            Path db = envPath(environment, "WHY_DB");
             boolean diagnostics = false;
-            boolean secureCookies = envFlag("WHY_SECURE_COOKIES");
+            boolean secureCookies = envFlag(environment, "WHY_SECURE_COOKIES");
             boolean trustProxy = false;
 
             for (int i = 0; i < args.length; i++) {
@@ -174,7 +192,7 @@ public final class WhyApp {
     }
 
     /** A problem with the command line or environment, reported as one line before exit. */
-    private static final class OptionException extends RuntimeException {
+    static final class OptionException extends RuntimeException {
         OptionException(String message) {
             super(message);
         }
