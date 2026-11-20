@@ -31,15 +31,14 @@ The language itself is a dependency, not a copy: the plugin resolves
 Needs JDK 21; the Gradle wrapper fetches the build tool.
 
 ```bash
-./gradlew whyRun --args="--db data.db --dev"
-```
-
-Or build the jar and run it:
-
-```bash
 ./gradlew shadowJar
-java -jar build/libs/whyx.jar --port 3000 --dev --db data.db
+java -jar build/libs/whyx.jar --port 3000 --dev --db app/data.db
 ```
+
+The jar applies the seed whenever it creates the database, so this run has the demo accounts even
+without `--dev`; delete `app/data.db` to start from a fresh, reseeded database. `./gradlew whyRun`
+serves `app/` straight from the folder at http://localhost:8080, but it skips the launcher, so there
+is no seed and sign-in needs the jar run above.
 
 Then open http://localhost:3000. `--dev` shows source and SQL in 500 pages; drop it to see the plain
 error page. `--db` keeps the database across runs — without it the site uses a temporary file.
