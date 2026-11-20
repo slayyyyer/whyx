@@ -12,8 +12,10 @@ Demo accounts are `alice`, `bob`, `carol`, `dave`, `erin` and `frank`, all with 
 - `app/` — the site: one `.why` file per URL, `style.css`, and `migrations/` holding the schema and
   the demo seed. A database is created from the migrations on first boot, so deleting `data.db` gets
   the demo data back.
-- `src/main/java/whyx/Main.java` — the launcher. The Why plugin packages `app/` into the jar under
-  `META-INF/why-site`, so the launcher serves it through `Site.fromClasspath()` instead of a folder.
+- `src/main/java/whyx/Main.java` — the launcher. It is annotated `@WhyApplication(seed = true)`,
+  so `WhyApp` opens the site packaged under `META-INF/why-site`, applies the demo seed, reads the
+  flags and environment, and starts the server; `Main` only delegates. The bootstrap lives in
+  `src/main/java/whyx/boot/`.
 - `src/test/java/whyx/WhyxAppTest.java` — the app's tests, driving the real pages through
   `why.testing.TestServer`.
 - `build.gradle.kts` — applies the published `io.github.slayyyyer.why` plugin (version `0.2.0`) and

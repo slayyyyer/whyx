@@ -1,0 +1,234 @@
+package whyx.boot;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Map;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import why.Site;
+
+/**
+ * The launcher's configuration and seed gate, without opening a server: flags and environment
+ * defaults are parsed into {@link WhyApp.Options}, seeding is applied only to a database that did
+ * not exist before the site was opened, and the paths that never reach the server return an exit
+ * status instead of exiting the process.
+ */
+class WhyAppTest {
+    private static final Map<String, String> NO_ENVIRONMENT = Map.of();
+
+    @Test
+    void usesDefaultsWhenNothingIsConfigured() {
+        WhyApp.Options options = parse();
+
+        assertEquals("127.0.0.1", options.host());
+        assertEquals(8080, options.port());
+        assertNull(options.db());
+        assertFalse(options.diagnostics());
+        assertFalse(options.secureCookies());
+        assertFalse(options.trustProxy());
+        assertFalse(options.help());
+    }
+
+    @Test
+    void readsEnvironmentDefaults() {
+        WhyApp.Options options = parse(new String[0], Map.of(
+                "HOST", "0.0.0.0",
+                "PORT", "9090",
+                "WHY_DB", "env.db",
+                "WHY_SECURE_COOKIES", "yes"));
+
+        assertEquals("0.0.0.0", options.host());
+        assertEquals(9090, options.port());
+        assertEquals(Path.of("env.db"), options.db());
+        assertTrue(options.secureCookies());
+    }
+
+    @Test
+    void ignoresBlankEnvironmentValues() {
+        WhyApp.Options options = parse(new String[0], Map.of(
+                "HOST", " ",
+                "PORT", "",
+                "WHY_DB", "\t",
+                "WHY_SECURE_COOKIES", " "));
+
+        assertEquals("127.0.0.1", options.host());
+        assertEquals(8080, options.port());
+        assertNull(options.db());
+        assertFalse(options.secureCookies());
+    }
+
+    @Test
+    void parsesFlagsAndOverridesEnvironment() {
+        WhyApp.Options options = parse(new String[] {
+                "--host", "0.0.0.0",
+                "-p", "1234",
+                "--db", "flag.db",
+                "--dev",
+                "--secure-cookies",
+                "--trust-proxy"
+        }, Map.of(
+                "HOST", "127.0.0.1",
+                "PORT", "8080",
+                "WHY_DB", "env.db",
+                "WHY_SECURE_COOKIES", "false"));
+
+        assertEquals("0.0.0.0", options.host());
+        assertEquals(1234, options.port());
+        assertEquals(Path.of("flag.db"), options.db());
+        assertTrue(options.diagnostics());
+        assertTrue(options.secureCookies());
+        assertTrue(options.trustProxy());
+        assertFalse(options.help());
+    }
+
+    @Test
+    void acceptsLongPortAndHelpFlags() {
+        WhyApp.Options options = parse("--port", "4321", "--help");
+
+        assertEquals(4321, options.port());
+        assertTrue(options.help());
+    }
+
+    @Test
+    void helpStopsBeforeLaterArguments() {
+        WhyApp.Options options = parse("-h", "--not-an-option");
+
+        assertTrue(options.help());
+    }
+
+    @Test
+    void rejectsUnknownOptionsAndMissingValues() {
+        WhyApp.LaunchException unknown = assertThrows(WhyApp.LaunchException.class,
+                () -> parse("--bogus"));
+        assertEquals("unknown option '--bogus'", unknown.getMessage());
+
+        WhyApp.LaunchException host = assertThrows(WhyApp.LaunchException.class,
+                () -> parse("--host"));
+        assertEquals("option --host needs a value", host.getMessage());
+
+        WhyApp.LaunchException port = assertThrows(WhyApp.LaunchException.class,
+                () -> parse("-p"));
+        assertEquals("option -p needs a value", port.getMessage());
+    }
+
+    @Test
+    void rejectsInvalidEnvironmentValues() {
+        WhyApp.LaunchException port = assertThrows(WhyApp.LaunchException.class,
+                () -> parse(new String[0], Map.of("PORT", "abc")));
+        assertEquals("port must be a number, got 'abc'", port.getMessage());
+
+        WhyApp.LaunchException flag = assertThrows(WhyApp.LaunchException.class,
+                () -> parse(new String[0], Map.of("WHY_SECURE_COOKIES", "maybe")));
+        assertEquals("WHY_SECURE_COOKIES must be true or false, got 'maybe'",
+                flag.getMessage());
+    }
+
+    @Test
+    void knowsWhenTheDatabaseIsNew(@TempDir Path dir) throws IOException {
+        assertTrue(WhyApp.isFresh(null), "the temporary database is new every run");
+        assertTrue(WhyApp.isFresh(dir.resolve("missing.db")));
+        assertFalse(WhyApp.isFresh(Files.createFile(dir.resolve("data.db"))));
+    }
+
+    @Test
+    void appliesSeedOnlyWhenEnabledAndFresh(@TempDir Path dir) throws IOException {
+        Path root = Files.createDirectory(dir.resolve("site"));
+        Files.writeString(root.resolve("seed.sql"), "create table marker (id integer primary key);");
+        Path db = dir.resolve("data.db");
+        Site site = new Site(root, db);
+
+        assertTrue(WhyApp.applySeed(true, site, true), "an enabled fresh database is seeded");
+        assertTrue(Files.exists(db), "seeding creates the database");
+        assertFalse(WhyApp.applySeed(true, site, false), "an existing database is not seeded");
+        assertFalse(WhyApp.applySeed(false, new Site(root, dir.resolve("disabled.db")), true),
+                "a disabled seed skips a fresh database");
+    }
+
+    @Test
+    void rejectsAnUnannotatedApplication() {
+        Output out = new Output();
+        Output err = new Output();
+
+        int status = WhyApp.run(Unannotated.class, new String[0], NO_ENVIRONMENT::get,
+                out.stream, err.stream);
+
+        assertEquals(1, status);
+        assertTrue(err.text().strip().endsWith(
+                Unannotated.class.getName() + " is not annotated with @WhyApplication"));
+        assertEquals("", out.text());
+    }
+
+    @Test
+    void printsHelpAndReturnsSuccessWithoutStartingTheServer() {
+        Output out = new Output();
+        Output err = new Output();
+
+        int status = WhyApp.run(Annotated.class, new String[] {"--help"},
+                NO_ENVIRONMENT::get, out.stream, err.stream);
+
+        assertEquals(0, status);
+        assertTrue(out.text().contains("usage: java -jar whyx.jar"));
+        assertEquals("", err.text());
+    }
+
+    @Test
+    void reportsConfigurationErrorsAsFailures() {
+        Output out = new Output();
+        Output optionErr = new Output();
+        Output environmentErr = new Output();
+
+        int optionStatus = WhyApp.run(Annotated.class, new String[] {"--bogus"},
+                NO_ENVIRONMENT::get, out.stream, optionErr.stream);
+        int environmentStatus = WhyApp.run(Annotated.class, new String[0],
+                Map.of("PORT", "abc")::get, out.stream, environmentErr.stream);
+
+        assertEquals(1, optionStatus);
+        assertTrue(optionErr.text().strip().endsWith("unknown option '--bogus'"));
+        assertEquals(1, environmentStatus);
+        assertTrue(environmentErr.text().strip().endsWith("port must be a number, got 'abc'"));
+        assertEquals("", out.text());
+    }
+
+    @Test
+    void readsSeedConfigurationFromTheAnnotatedClass() {
+        assertTrue(WhyApp.configuration(Seeded.class).seed());
+        assertFalse(WhyApp.configuration(Annotated.class).seed());
+    }
+
+    private static WhyApp.Options parse(String... args) {
+        return parse(args, Map.of());
+    }
+
+    private static WhyApp.Options parse(String[] args, Map<String, String> environment) {
+        return WhyApp.Options.parse(args, environment::get);
+    }
+
+    private static final class Output {
+        private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        final PrintStream stream = new PrintStream(bytes, true, StandardCharsets.UTF_8);
+
+        String text() {
+            return bytes.toString(StandardCharsets.UTF_8);
+        }
+    }
+
+    static final class Unannotated {}
+
+    @WhyApplication
+    static final class Annotated {}
+
+    @WhyApplication(seed = true)
+    static final class Seeded {}
+}
