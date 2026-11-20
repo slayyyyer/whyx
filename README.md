@@ -76,9 +76,8 @@ Render can also build this repository directly: **New → Web Service → Git re
 
 A free instance sleeps after 15 idle minutes, and the first visit after that waits about a minute.
 `.github/workflows/keepalive.yml` curls the site every 10 minutes so the demo stays awake. It reads
-the address from the `SITE_URL` repository variable (Settings → Secrets and variables → Actions →
-Variables, e.g. `https://whyx.onrender.com/`); with the variable unset the job skips and prints a
-reminder instead of failing.
+the address from the `SITE_URL` repository variable, defaulting to `https://whyx-sxzp.onrender.com/` — set the variable
+(Settings → Secrets and variables → Actions → Variables) to point it at another address.
 
 Two things to know: GitHub's scheduler is best effort and can fire late by several minutes, so an
 external monitor at a fixed 5-minute interval is more punctual if the demo keeps falling asleep; and
