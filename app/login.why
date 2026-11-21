@@ -15,10 +15,17 @@ if request.method == "POST"
   password = str(form.password)
   client = client_key(db, session)
   # Checked before any PBKDF2 work, so a flood of guesses is cheap for the server and slow for
-  # the caller. Handles are limited too, so one account cannot be used to burn the CPU alone.
-  if login_blocked(db, "handle", handle, login_limit()) or login_blocked(db, "client", client, login_client_limit())
+  # the caller. Handles are limited too, so one account cannot be used to burn the CPU alone, and
+  # the site ceiling caps what a flood of cookie-less callers can spend.
+  handle_blocked = login_blocked(db, "handle", handle, login_limit())
+  client_blocked = login_blocked(db, "client", client, login_client_limit())
+  site_blocked = login_blocked(db, "site", "all", site_limit())
+  if handle_blocked or client_blocked or site_blocked
     error = "Too many sign-in attempts. Wait a few minutes and try again."
   else
+    # Reaching the derivation is what costs the instance, so the attempt is counted against the
+    # site ceiling before the hash is computed, whatever the outcome turns out to be.
+    login_failed(db, "site", "all")
     user = db.get("select id, name, password_hash from users where handle = ?", handle)
     stored = dummy_password_hash()
     if user != nil

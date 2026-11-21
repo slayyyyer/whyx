@@ -75,6 +75,15 @@ def login_client_limit()
   20
 end
 
+# A site-wide ceiling on password work. A caller that sends no cookies is handed a fresh browser
+# budget on every request, so the per-browser limit alone cannot cap PBKDF2. Every attempt that
+# reaches the derivation counts here, successes included, and past the ceiling sign-in and sign-up
+# refuse before hashing anything: a flood then costs at most this many derivations per window,
+# while ordinary demo traffic (a few dozen attempts) stays far below it.
+def site_limit()
+  200
+end
+
 # Sign-ups share the attempt log: five new accounts per browser inside the sign-in window.
 def signup_limit()
   5

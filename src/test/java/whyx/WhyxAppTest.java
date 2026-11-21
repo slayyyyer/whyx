@@ -227,11 +227,45 @@ class WhyxAppTest {
                 + " where kind = 'client' and subject = ?", List.of("client-a")));
         assertEquals(1L, count("select count(*) as n from login_attempts"
                 + " where kind = 'handle' and subject = ?", List.of("alice")));
+        assertEquals(1L, count("select count(*) as n from login_attempts"
+                + " where kind = 'site' and subject = 'all'", List.of()),
+                "a derivation should count against the site ceiling");
 
         TestServer.Response blocked = post("/login", browser,
                 Map.of("handle", "alice", "password", PASSWORD));
         assertEquals(200, blocked.status(), blocked.body());
         assertTrue(blocked.body().contains("Too many sign-in attempts"), blocked.body());
+    }
+
+    @Test
+    void cookieLessCallersStillHitTheSiteCeiling() throws Exception {
+        try (Db db = new Db(dir.resolve("data.db"))) {
+            for (int i = 0; i < 200; i++) {
+                db.exec("insert into login_attempts (kind, subject, attempted_at)"
+                        + " values (?, ?, strftime('%s','now'))", List.of("site", "all"));
+            }
+        }
+        long users = count("select count(*) as n from users", List.of());
+
+        // Sending no cookies buys a fresh browser budget every request, so only the site ceiling
+        // stands between a flood and the instance's CPU.
+        TestServer.Response signIn = post("/login", null,
+                Map.of("handle", "alice", "password", PASSWORD));
+        assertEquals(200, signIn.status(), signIn.body());
+        assertTrue(signIn.body().contains("Too many sign-in attempts"), signIn.body());
+        assertEquals(0L, count("select count(*) as n from login_attempts"
+                + " where kind = 'handle' and subject = 'alice'", List.of()),
+                "a refused attempt must not pay for a derivation");
+        assertEquals(200L, count("select count(*) as n from login_attempts"
+                + " where kind = 'site' and subject = 'all'", List.of()),
+                "a refused attempt must not extend the ceiling");
+
+        TestServer.Response signUp = post("/signup", null,
+                Map.of("name", "Flood", "handle", "flood", "password", "secret1"));
+        assertEquals(200, signUp.status(), signUp.body());
+        assertTrue(signUp.body().contains("Too many accounts"), signUp.body());
+        assertEquals(users, count("select count(*) as n from users", List.of()),
+                "a refused sign-up created a user");
     }
 
     @Test

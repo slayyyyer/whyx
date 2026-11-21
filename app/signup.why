@@ -17,10 +17,13 @@ e_password = nil
 e_form = nil
 if request.method == "POST"
   client = client_key(db, session)
-  # Five accounts per browser inside the sign-in window. The attempt log is shared with sign-in,
-  # so the limit survives a restart and needs no extra table.
-  if login_blocked(db, "signup", client, signup_limit())
-    e_form = "Too many accounts from this address. Wait a few minutes and try again."
+  # Five accounts per browser inside the sign-in window, and the site ceiling caps the password
+  # hashing a flood of cookie-less callers can cause. The attempt log is shared with sign-in, so
+  # these limits survive a restart and need no extra table.
+  browser_blocked = login_blocked(db, "signup", client, signup_limit())
+  site_blocked = login_blocked(db, "site", "all", site_limit())
+  if browser_blocked or site_blocked
+    e_form = "Too many accounts from this browser. Wait a few minutes and try again."
   else
     fields = {name: form.name, handle: handle, password: form.password}
     errors = validate(fields, {name: "required,max:50", handle: "required,min:3,max:15", password: "required,min:6"})
@@ -32,6 +35,8 @@ if request.method == "POST"
       if taken
         e_handle = "is already taken"
       else
+        # The hash below is the expensive part, so it counts against the site ceiling first.
+        login_failed(db, "site", "all")
         salt = db.query("select lower(hex(randomblob(16))) as s").first.s
         stored = "pbkdf2-sha256$" + str(rounds()) + "$" + salt + "$" + pbkdf2(str(form.password), salt, rounds())
         colors = ["#1d9bf0", "#f91880", "#00ba7c", "#ffd400", "#7856ff", "#ff7a00"]
