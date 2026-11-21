@@ -13,10 +13,10 @@ error = ""
 if request.method == "POST"
   handle = clean_handle(form.handle)
   password = str(form.password)
-  ip = str(request.remote)
+  client = client_key(db, session)
   # Checked before any PBKDF2 work, so a flood of guesses is cheap for the server and slow for
   # the caller. Handles are limited too, so one account cannot be used to burn the CPU alone.
-  if login_blocked(db, "handle", handle, login_limit()) or login_blocked(db, "ip", ip, login_ip_limit())
+  if login_blocked(db, "handle", handle, login_limit()) or login_blocked(db, "client", client, login_client_limit())
     error = "Too many sign-in attempts. Wait a few minutes and try again."
   else
     user = db.get("select id, name, password_hash from users where handle = ?", handle)
@@ -37,12 +37,13 @@ if request.method == "POST"
       # store the user, and rotate the id.
       session.clear()
       session.set("user_id", str(user.id))
+      session.set("client", client)
       session.rotate()
       flash.set("notice", "Welcome back, " + user.name + ".")
       redirect("/")
     else
       login_failed(db, "handle", handle)
-      login_failed(db, "ip", ip)
+      login_failed(db, "client", client)
       error = "That handle and password do not match."
     end
   end

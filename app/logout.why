@@ -1,5 +1,7 @@
 controller:
-session.clear()
+# Removes the user and keeps the rest of the session, so the browser's sign-in and sign-up
+# budget survives signing out and cannot be reset by signing out and in again.
+session.set("user_id", nil)
 flash.set("notice", "You are signed out.")
 redirect("/login")
 

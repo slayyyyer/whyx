@@ -210,45 +210,88 @@ class WhyxAppTest {
     }
 
     @Test
-    void failedSignInsAreRecordedAndTheAddressIsLimited() throws Exception {
+    void failedSignInsAreRecordedAndTheBrowserIsLimited() throws Exception {
+        String browser = plantSession("browser-a", "client", "client-a");
         try (Db db = new Db(dir.resolve("data.db"))) {
             for (int i = 0; i < 19; i++) {
                 db.exec("insert into login_attempts (kind, subject, attempted_at)"
-                        + " values (?, ?, strftime('%s','now'))", List.of("ip", "127.0.0.1"));
+                        + " values (?, ?, strftime('%s','now'))", List.of("client", "client-a"));
             }
         }
 
-        TestServer.Response failed = post("/login", null,
+        TestServer.Response failed = post("/login", browser,
                 Map.of("handle", "alice", "password", "not-it"));
         assertEquals(200, failed.status(), failed.body());
         assertTrue(failed.body().contains("do not match"), failed.body());
         assertEquals(20L, count("select count(*) as n from login_attempts"
-                + " where kind = 'ip' and subject = ?", List.of("127.0.0.1")));
+                + " where kind = 'client' and subject = ?", List.of("client-a")));
         assertEquals(1L, count("select count(*) as n from login_attempts"
                 + " where kind = 'handle' and subject = ?", List.of("alice")));
 
-        TestServer.Response blocked = post("/login", null,
+        TestServer.Response blocked = post("/login", browser,
                 Map.of("handle", "alice", "password", PASSWORD));
         assertEquals(200, blocked.status(), blocked.body());
         assertTrue(blocked.body().contains("Too many sign-in attempts"), blocked.body());
     }
 
     @Test
-    void signupsFromOneAddressAreLimited() throws Exception {
+    void oneBrowsersFailuresDoNotLockOutAnother() throws Exception {
+        String exhausted = plantSession("browser-a", "client", "client-a");
+        try (Db db = new Db(dir.resolve("data.db"))) {
+            for (int i = 0; i < 20; i++) {
+                db.exec("insert into login_attempts (kind, subject, attempted_at)"
+                        + " values (?, ?, strftime('%s','now'))", List.of("client", "client-a"));
+            }
+        }
+        String visitor = plantSession("browser-b", "client", "client-b");
+
+        TestServer.Response blocked = post("/login", exhausted,
+                Map.of("handle", "alice", "password", PASSWORD));
+        assertEquals(200, blocked.status(), blocked.body());
+        assertTrue(blocked.body().contains("Too many sign-in attempts"), blocked.body());
+
+        // Every visitor shares one address behind the deployment's TLS proxy, so a budget keyed on
+        // the address turned one caller's failures into a lockout for everyone.
+        TestServer.Response allowed = post("/login", visitor,
+                Map.of("handle", "alice", "password", PASSWORD));
+        assertEquals(303, allowed.status(), allowed.body());
+        assertEquals("/", allowed.header("location"));
+    }
+
+    @Test
+    void signupsFromOneBrowserAreLimitedButAnotherCanStillJoin() throws Exception {
+        String browser = plantSession("browser-a", "client", "client-a");
+        String sid = browser;
+        // Signing up rotates the session, so the browser's budget only holds if the token survives
+        // the rotation; each new id is carried into the next attempt.
         for (int i = 1; i <= 5; i++) {
-            TestServer.Response created = post("/signup", null,
+            TestServer.Response created = post("/signup", sid,
                     Map.of("name", "New " + i, "handle", "newbie" + i, "password", "secret1"));
             assertEquals(303, created.status(), created.body());
+            sid = cookie(created, "why_sid");
+            assertFalse(sid.isEmpty(), "signing up should rotate the session: " + created.headers());
+            // A new account lands signed in, and the sign-up page sends signed-in visitors home,
+            // so the next attempt has to sign out first. That keeps the browser's budget because
+            // signing out removes the user and leaves the session, and its token, in place.
+            TestServer.Response left = post("/logout", sid, Map.of());
+            assertEquals(303, left.status(), left.body());
+            String afterLogout = cookie(left, "why_sid");
+            if (!afterLogout.isEmpty()) sid = afterLogout;
         }
         long before = count("select count(*) as n from users", List.of());
 
-        TestServer.Response blocked = post("/signup", null,
+        TestServer.Response blocked = post("/signup", sid,
                 Map.of("name", "New 6", "handle", "newbie6", "password", "secret1"));
         assertEquals(200, blocked.status(), blocked.body());
         assertTrue(blocked.body().contains("Too many accounts"), blocked.body());
         assertEquals(before, count("select count(*) as n from users", List.of()),
                 "a rate-limited sign-up created a user");
         assertNull(row("select id from users where handle = 'newbie6'", List.of()));
+
+        String other = plantSession("browser-b", "client", "client-b");
+        TestServer.Response joined = post("/signup", other,
+                Map.of("name", "Elsewhere", "handle", "elsewhere", "password", "secret1"));
+        assertEquals(303, joined.status(), joined.body());
     }
 
     /** Copies the pages, stylesheet, migrations and dev seed, leaving the demo database behind. */
@@ -276,15 +319,18 @@ class WhyxAppTest {
 
     /** A live session id the browser already holds, as if an earlier page had stored something. */
     private String plantSession() {
-        String id = "planted-session";
+        return plantSession("planted-session", "visited", "1");
+    }
+
+    /** A live session holding one name, for tests that need a known throttle subject. */
+    private String plantSession(String id, String name, String value) {
         try (Db db = new Db(dir.resolve("data.db"))) {
             // The store creates this table on its first save; a planted session comes before that.
             db.exec("create table if not exists why_sessions (id text not null, name text not null,"
                     + " value text not null, updated_at integer not null, primary key (id, name))",
                     List.of());
             db.exec("insert into why_sessions (id, name, value, updated_at)"
-                    + " values (?, ?, ?, strftime('%s','now'))",
-                    List.of(id, "visited", "1"));
+                    + " values (?, ?, ?, strftime('%s','now'))", List.of(id, name, value));
         }
         return id;
     }

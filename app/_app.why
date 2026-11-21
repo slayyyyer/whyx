@@ -61,7 +61,7 @@ end
 
 # Sign-in throttling. Every failed attempt is one row and only rows inside the window count, so
 # the limit slides instead of resetting on a fixed clock. The handle limit caps the PBKDF2 work
-# one account can cost and the IP limit caps it for one caller. Handles that do not exist are
+# one account can cost and the caller limit caps it for one browser. Handles that do not exist are
 # counted too, so a throttled answer says nothing about whether an account exists.
 def login_window()
   15 * 60
@@ -71,13 +71,30 @@ def login_limit()
   5
 end
 
-def login_ip_limit()
+def login_client_limit()
   20
 end
 
-# Sign-ups share the attempt log: five new accounts per address inside the sign-in window.
+# Sign-ups share the attempt log: five new accounts per browser inside the sign-in window.
 def signup_limit()
   5
+end
+
+# The subject a rate limit counts against. request.remote is the socket peer, and the image runs
+# behind a TLS proxy, so every visitor arrives from the proxy's address: a bucket keyed on it is
+# one budget for the whole site, and any caller can spend it to lock everyone else out. This is an
+# opaque per-browser token in the server-side session instead, so each visitor gets their own
+# budget. Signing in and signing up carry the token across the session rotation they trigger, and
+# signing out removes only the user, so a browser keeps its own budget across all three; clearing
+# cookies starts a new token, which is the cost of not seeing the client address. The per-handle
+# limit is unaffected.
+def client_key(db, session)
+  key = session.get("client")
+  if key == nil
+    key = db.query("select lower(hex(randomblob(16))) as t").first.t
+    session.set("client", str(key))
+  end
+  str(key)
 end
 
 def login_blocked(db, kind, key, limit)
